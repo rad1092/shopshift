@@ -1,6 +1,7 @@
 """Widget integration checks; run with QT_QPA_PLATFORM=offscreen in headless CI."""
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -395,3 +396,116 @@ def test_authored_light_palette_has_readable_text_in_all_active_states(window):
             low, high = sorted((luminance(palette.color(group, foreground)),
                                 luminance(palette.color(group, background))))
             assert (high + 0.05) / (low + 0.05) >= 4.5
+
+
+def test_scenario_100_to_101_rejected_before_mutation_and_still_saveable(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    from shopshift.model import Scenario
+    from shopshift.storage import backup_project
+
+    candidate = deepcopy(window.project)
+    candidate.scenarios = {"Baseline": deepcopy(candidate.scenario)}
+    candidate.scenarios["Baseline"].name = "Baseline"
+    candidate.active_scenario = "Baseline"
+    for i in range(98):
+        name = f"Alternative {i}"
+        candidate.scenarios[name] = Scenario(name, deepcopy(candidate.scenario.placements))
+    assert window.set_project(candidate)
+    window.copy_scenario("Last allowed")
+    assert len(window.project.scenarios) == 100
+    before, history = window.project.to_dict(), len(window.undo_stack)
+    errors = []
+    monkeypatch.setattr(window, "_error", lambda title, exc: errors.append(str(exc)))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("Overflow", True))
+    window.copy_scenario_dialog()
+    assert errors and "100 scenarios" in errors[0]
+    assert window.project.to_dict() == before
+    assert len(window.undo_stack) == history
+    assert window.save_to(tmp_path / "hundred.shopshift")
+    backup_project(window.project, tmp_path / "hundred-backup.shopshift")
+    assert load_project(tmp_path / "hundred-backup.shopshift").to_dict() == before
+
+
+def test_scenario_name_storage_limit_rejected_in_copy_ui(window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    before, history, dirty = window.project.to_dict(), len(window.undo_stack), window.dirty
+    errors = []
+    monkeypatch.setattr(window, "_error", lambda title, exc: errors.append(str(exc)))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("S" * 4097, True))
+    window.copy_scenario_dialog()
+    assert errors and "4,096" in errors[0]
+    assert window.project.to_dict() == before
+    assert len(window.undo_stack) == history and window.dirty == dirty
+
+
+@pytest.mark.parametrize("limit", ["resources", "calendar_windows", "schema"])
+def test_common_mutation_admission_enforces_persistence_limits(window, monkeypatch, limit):
+    candidate = deepcopy(window.project)
+    if limit == "resources":
+        candidate.machines = {f"M{i}": Resource(f"M{i}", []) for i in range(2001)}
+    elif limit == "calendar_windows":
+        candidate.machines["SAW"].windows = [Window(0, 60)] * 10001
+    else:
+        candidate.scenario.placements["WO-401-10"].locked = "not a boolean"
+    before, history, dirty = window.project.to_dict(), len(window.undo_stack), window.dirty
+    errors = []
+    monkeypatch.setattr(window, "_error", lambda title, exc: errors.append(str(exc)))
+    assert not window.apply_project(candidate, "Rejected edit")
+    assert errors
+    assert window.project.to_dict() == before
+    assert len(window.undo_stack) == history and window.dirty == dirty
+    # Loading/replacing a whole draft uses the same gate and preserves the live draft.
+    assert not window.set_project(candidate)
+    assert window.project.to_dict() == before
+
+
+def test_admission_checks_actual_encoded_size(window, tmp_path, monkeypatch):
+    from shopshift import storage
+
+    baseline = tmp_path / "size.shopshift"
+    assert window.save_to(baseline)
+    monkeypatch.setattr(storage, "MAX_PROJECT_BYTES", baseline.stat().st_size + 10)
+    candidate = deepcopy(window.project)
+    candidate.name += "x" * 100
+    before = window.project.to_dict()
+    errors = []
+    monkeypatch.setattr(window, "_error", lambda title, exc: errors.append(str(exc)))
+    assert not window.apply_project(candidate, "Too large")
+    assert errors and window.project.to_dict() == before
+    assert window.save_to(baseline)
+
+
+def test_admission_allows_conflicting_drafts_to_be_saved(window, tmp_path):
+    from shopshift.validator import validate
+
+    candidate = deepcopy(window.project)
+    candidate.scenario.placements["WO-401-20"].start = candidate.horizon_start
+    assert any(issue.severity == "error" for issue in validate(candidate))
+    assert window.apply_project(candidate, "Draft with a conflict to repair")
+    assert window.save_to(tmp_path / "conflicted.shopshift")
+    assert load_project(tmp_path / "conflicted.shopshift").to_dict() == candidate.to_dict()
+
+
+def test_compact_backup_cannot_restore_an_unsaveable_draft(window, tmp_path, monkeypatch):
+    from shopshift import storage
+
+    backup = tmp_path / "compact.shopshift"
+    assert window.save_to(backup)
+    pretty = backup.read_bytes()
+    compact = json.dumps(json.loads(pretty), separators=(",", ":")).encode()
+    assert len(compact) < len(pretty)
+    backup.write_bytes(compact)
+    monkeypatch.setattr(storage, "MAX_PROJECT_BYTES", (len(compact) + len(pretty)) // 2)
+    with pytest.raises(storage.StorageProblem, match="exceeds"):
+        load_project(backup)
+    before, history, dirty, path = window.project.to_dict(), len(window.undo_stack), window.dirty, window.path
+    errors = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args, **kwargs: (str(backup), ""))
+    monkeypatch.setattr(window, "_error", lambda title, exc: errors.append((title, str(exc))))
+    window.restore()
+    assert errors and "Restore failed" in errors[0][0]
+    assert window.project.to_dict() == before
+    assert len(window.undo_stack) == history and window.dirty == dirty and window.path == path
+    assert "Backup restored" not in window.statusBar().currentMessage()

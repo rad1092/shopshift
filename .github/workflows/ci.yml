@@ -52,16 +52,18 @@ jobs:
           mkdir -p build
           ldd .venv/lib/python3.12/site-packages/PySide6/Qt/plugins/platforms/libqxcb.so | tee build/linux-qt-dependencies.txt
           QT_DEBUG_PLUGINS=1 xvfb-run -a uv run --no-sync python -c "from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt platform:', app.platformName())" 2>&1 | tee build/linux-qt-preflight.log
-      - name: Tests and GUI smoke (Linux X11)
+      - name: Tests (Linux X11)
         if: runner.os == 'Linux'
-        run: |
-          xvfb-run -a uv run --no-sync pytest -q --junitxml=build/test-results.xml
-          xvfb-run -a uv run --no-sync python -m shopshift --smoke-test build/source-smoke
-      - name: Tests and GUI smoke (Windows and macOS)
+        run: xvfb-run -a uv run --no-sync pytest -q --junitxml=build/test-results.xml
+      - name: GUI smoke (Linux X11)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run --no-sync python -m shopshift --smoke-test build/source-smoke
+      - name: Tests (Windows and macOS)
         if: runner.os != 'Linux'
-        run: |
-          uv run --no-sync pytest -q --junitxml=build/test-results.xml
-          uv run --no-sync python -m shopshift --smoke-test build/source-smoke
+        run: uv run --no-sync pytest -q --junitxml=build/test-results.xml
+      - name: GUI smoke (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: uv run --no-sync python -m shopshift --smoke-test build/source-smoke
       - name: Build, install from archive, launch and clean wheel install (Linux X11)
         if: runner.os == 'Linux'
         run: xvfb-run -a uv run --no-sync python scripts/build_release.py --test-wheel

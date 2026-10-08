@@ -16,6 +16,8 @@ The useful repeated loop is import → review added/changed operations → prese
 
 ## Explicit boundaries
 
+Project storage supports at most 100 scenarios, 2,000 combined machine/operator resources, 100,000 total calendar windows, 10,000 entries in each object or array (including each resource's windows), 4,096 characters per text value/key, and 20 MiB of canonical saved JSON. Desktop edits and import application, opening, and restoring reject violations before changing the live draft. Scheduling conflicts do not prevent saving a draft for repair.
+
 This release does not model material availability, inventory, alternative machines, employee skills, subcontracting, sequence-dependent setup, machine capacity greater than one, multi-planner collaboration, live shopfloor state, or automatic execution. Uncertain durations and frequent breakdowns can make a whiteboard preferable. A feasible mathematical plan is not a production commitment. Correct imported data and a human review remain necessary.
 
 ## Acceptance

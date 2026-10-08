@@ -95,6 +95,15 @@ def _encode(project: Project) -> bytes:
     return encoded
 
 
+def validate_project_for_storage(project: Project) -> None:
+    """Check schema and persistence limits without writing or checking feasibility.
+
+    Editors use this same encoding path before accepting a mutation. Logically
+    conflicting schedules remain valid drafts and can still be saved for repair.
+    """
+    _encode(project)
+
+
 def _fsync_directory(directory: Path) -> None:
     # Windows has no portable directory fsync; file flushing + replace still
     # avoids partial JSON, but sudden power-loss guarantees depend on the FS.
@@ -135,7 +144,10 @@ save under a new name, or call restore_project to replace a damaged file.
     try:
         if path.stat().st_size > MAX_PROJECT_BYTES:
             raise StorageProblem("Project exceeds 20 MiB")
-        return _decode(path.read_bytes())
+        project = _decode(path.read_bytes())
+        # Compact external JSON must also fit the canonical format we save.
+        validate_project_for_storage(project)
+        return project
     except (OSError, StorageProblem) as exc:
         recovery = f" A previous version is available at {path.name}.bak; open it explicitly to recover." if Path(str(path) + ".bak").is_file() else ""
         raise StorageProblem(f"Could not open {path.name}: {exc}.{recovery}") from exc

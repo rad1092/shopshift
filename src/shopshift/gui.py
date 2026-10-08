@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from .model import Operation, Placement, Project, Resource, Scenario, Window
+from .storage import StorageProblem, validate_project_for_storage
 from .timeutil import day_bounds, format_timestamp, parse_timestamp, working_windows
 from .validator import validate
 
@@ -841,7 +842,17 @@ class MainWindow(QMainWindow):
             return True
         return super().eventFilter(watched, event)
 
-    def set_project(self, project: Project, path: str | Path | None = None):
+    def _admit_project(self, project: Project) -> bool:
+        try:
+            validate_project_for_storage(project)
+        except StorageProblem as exc:
+            self._error("Cannot apply change — current project unchanged / 변경 적용 불가", exc)
+            return False
+        return True
+
+    def set_project(self, project: Project, path: str | Path | None = None) -> bool:
+        if not self._admit_project(project):
+            return False
         self.project = deepcopy(project)
         self.path = Path(path) if path else None
         self.undo_stack.clear()
@@ -850,14 +861,18 @@ class MainWindow(QMainWindow):
         self.late_only.setChecked(False)
         self.day_filter.clear()
         self.refresh()
+        return True
 
-    def apply_project(self, project: Project, description: str):
+    def apply_project(self, project: Project, description: str) -> bool:
+        if not self._admit_project(project):
+            return False
         self.undo_stack.append((deepcopy(self.project), description))
         self.undo_stack = self.undo_stack[-50:]
         self.project = deepcopy(project)
         self.dirty = True
         self.refresh()
         self.statusBar().showMessage(description + " · Undo available / 실행 취소 가능", 8000)
+        return True
 
     def undo(self):
         if self._solver_thread is not None:
@@ -1316,9 +1331,9 @@ class MainWindow(QMainWindow):
             dialog = ProjectDialog(candidate, self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 candidate.name, candidate.timezone, candidate.horizon_start, candidate.horizon_end = dialog.values
-                self.set_project(candidate)
-                self.dirty = True
-                self.refresh()
+                if self.set_project(candidate):
+                    self.dirty = True
+                    self.refresh()
 
     def load_demo(self):
         if self._confirm_discard():
@@ -1335,8 +1350,7 @@ class MainWindow(QMainWindow):
         from .storage import load_project
         try:
             project = load_project(path)
-            self.set_project(project, path)
-            return True
+            return self.set_project(project, path)
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
             message = str(exc)
             if Path(str(path) + ".bak").exists():
@@ -1383,8 +1397,7 @@ class MainWindow(QMainWindow):
             project = load_project(path)
             review = ReviewDialog("Review backup / 백업 검토", project.name,
                                   f"{len(project.operations)} operations · {len(project.scenarios)} scenarios\n{project.timezone}\n\n" + (_issues_text(validate(project)) or "No validation conflicts."), self)
-            if review.exec() == QDialog.DialogCode.Accepted and self._confirm_discard():
-                self.set_project(project)
+            if review.exec() == QDialog.DialogCode.Accepted and self._confirm_discard() and self.set_project(project):
                 self.dirty = True
                 self.refresh()
                 self.statusBar().showMessage("Backup restored in memory. Save as a project to keep it. / 복원 후 저장하세요.", 9000)
