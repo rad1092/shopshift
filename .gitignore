@@ -11,3 +11,4 @@ dist/
 artifacts/
 *.shopshift.bak
 release/
+release-*/

@@ -16,7 +16,9 @@ Independent review additionally reproduced and fixed saved optional-mapping choi
 
 The [Test and package workflow](https://github.com/rad1092/shopshift/actions/workflows/ci.yml) runs Linux X11/Xvfb, Windows and macOS. Each job runs tests, source GUI smoke, builds a portable archive, extracts it into a fresh directory, launches that packaged executable, installs the wheel into a clean virtual environment, and repeats smoke. Every published build report must identify the same clean source commit as the successful workflow.
 
-Cross-platform results are pending until the workflow on the release commit is green. The GitHub release notes and attached build reports are the authoritative immutable evidence for a published version; do not infer success merely from this workflow definition. Each report includes native library inventory, dependency versions, package size, solver status and smoke checks. Checksums accompany assets. Binary releases are unsigned and not notarized.
+Publication is gated on a successful workflow for the exact release commit. The GitHub release notes and attached build reports are the authoritative immutable evidence for a published version; do not infer success merely from this workflow definition. Each report includes native library inventory, dependency versions, package size, solver status and smoke checks. Checksums accompany assets. Binary releases are unsigned and not notarized.
+
+The first Linux runner exposed a missing `libxcb-shape.so.0`; its required system package is now explicit in the workflow and installation notes. An additional source-distribution check rejects generated output directories, preventing portable binaries from being accidentally nested in a source archive.
 
 ## Limits of the evidence
 

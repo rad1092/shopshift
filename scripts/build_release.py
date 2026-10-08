@@ -64,6 +64,20 @@ def executable(install: Path) -> Path:
     return install / 'ShopShift' / ('ShopShift.exe' if sys.platform == 'win32' else 'ShopShift')
 
 
+def validate_sdist(path: Path) -> None:
+    import tomllib
+    config = tomllib.loads((ROOT / 'pyproject.toml').read_text())
+    approved = {name.strip('/') for name in config['tool']['hatch']['build']['targets']['sdist']['include']}
+    approved.add('PKG-INFO')  # Generated core package metadata, not a checkout file.
+    forbidden = {'release', 'build', '.venv', '.git', '__pycache__', '.pytest_cache', '.ruff_cache'}
+    with tarfile.open(path) as distribution:
+        for member in distribution:
+            relative = Path(member.name).parts[1:]
+            if relative and (relative[0] not in approved or forbidden.intersection(relative)
+                             or member.name.endswith('.pyc')):
+                raise RuntimeError(f'Unapproved/generated content in source distribution: {member.name}')
+
+
 def audit_bundle(bundle: Path) -> dict:
     forbidden = ('qtwebengine', 'qtvirtualkeyboard', 'qtpdf', 'qtquick', 'qtqml',
                  'designer.exe', 'linguist.exe', 'qml.exe')
@@ -144,12 +158,7 @@ def build(output: Path, *, test_wheel: bool, skip_download: bool) -> dict:
     # Build requirements must already be installed by the locked development environment.
     run([sys.executable, '-m', 'build', '--no-isolation', '--outdir', str(python_dist)])
     wheel = next(python_dist.glob('*.whl'))
-    with tarfile.open(next(python_dist.glob('*.tar.gz'))) as distribution:
-        unsafe = [member.name for member in distribution.getmembers()
-                  if any(part in {'release', 'build', '.venv', '.git', '__pycache__'}
-                         for part in Path(member.name).parts[1:])]
-        if unsafe:
-            raise RuntimeError(f'Generated/cache files leaked into source distribution: {unsafe[:5]}')
+    validate_sdist(next(python_dist.glob('*.tar.gz')))
     with zipfile.ZipFile(wheel) as distribution:
         if 'shopshift/__main__.py' not in distribution.namelist():
             raise RuntimeError('Wheel is missing the application entry point')

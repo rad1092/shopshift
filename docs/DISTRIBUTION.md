@@ -20,7 +20,7 @@ binary. No Intel macOS or Linux arm64 package is supplied by this matrix.
 On Ubuntu 24.04, the desktop prerequisites used by CI can be installed with:
 
 ```sh
-sudo apt-get install libegl1 libopengl0 libgl1 libdbus-1-3 libfontconfig1 libfreetype6 libglib2.0-0t64 libcups2t64 libx11-xcb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 fonts-noto-cjk
+sudo apt-get install libegl1 libopengl0 libgl1 libdbus-1-3 libfontconfig1 libfreetype6 libglib2.0-0t64 libcups2t64 libx11-xcb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xfixes0 fonts-noto-cjk
 ```
 
 Linux libraries originating in `/lib` or `/usr/lib` remain system dependencies;

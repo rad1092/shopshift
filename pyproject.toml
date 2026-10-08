@@ -18,6 +18,13 @@ dev = ["hatchling>=1.27", "pytest>=8", "pytest-qt>=4.4", "hypothesis>=6", "ruff>
 shopshift = "shopshift.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/shopshift"]
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src", "/tests", "/scripts", "/examples", "/docs", "/.github",
+    "/README.md", "/LICENSE", "/AGENTS.md", "/CHANGELOG.md",
+    "/THIRD_PARTY_NOTICES.md", "/pyproject.toml", "/uv.lock",
+    "/shopshift.spec", "/.gitattributes", "/.gitignore",
+]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 [tool.ruff]
