@@ -5,10 +5,12 @@
     "reimport preserves locked start and retains omitted rows",
     "project save/restart/backup restore round trip",
     "CSV and printable HTML snapshots",
-    "native widget launch and undo"
+    "native widget launch and undo",
+    "real timeline drag and undo in installed GUI",
+    "Korean controls and named accessible schedule widgets"
   ],
   "solver_status": "optimal",
   "platform": "macOS-27.0.1-arm64-arm-64bit",
   "python": "3.12.13",
-  "seconds": 0.698
+  "seconds": 0.784
 }

@@ -5,8 +5,9 @@ from copy import deepcopy
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QFileDialog, QLabel, QMessageBox
 
 from shopshift.demo import demo_project
 from shopshift.gui import (
@@ -19,7 +20,7 @@ from shopshift.gui import (
 )
 from shopshift.model import Placement, Resource, Window
 from shopshift.solver import SolveResult
-from shopshift.storage import load_project
+from shopshift.storage import _day_range, load_project
 
 
 @pytest.fixture
@@ -87,6 +88,7 @@ def test_real_drag_and_keyboard_equivalent(window, qtbot):
 
 
 def test_import_review_cancel_and_repeat_preserves_decisions(window, tmp_path, monkeypatch):
+    window.project.mappings.clear()  # This fixture uses a different export schema than the demo.
     source = tmp_path / "day2.csv"
     source.write_text("id,job,machine,run\nWO-401-20,WO-401,MILL-1,90\n", encoding="utf-8")
     mapping = {key: key for key in ("id", "job", "machine", "run")}
@@ -109,6 +111,7 @@ def test_import_review_cancel_and_repeat_preserves_decisions(window, tmp_path, m
 
 
 def test_bad_import_and_failed_save_keep_live_draft(window, tmp_path, monkeypatch):
+    window.project.mappings.clear()
     source = tmp_path / "bad.csv"
     source.write_text("id,job,machine,run\nA,Job,MILL-1,not-a-number\n", encoding="utf-8")
     before = window.project.to_dict()
@@ -266,3 +269,129 @@ def test_calendar_default_failure_reports_error_in_dialog(window):
     dialog._defaults()
     assert dialog.error.text()
     assert dialog.editor.toPlainText() == before
+
+
+def test_saved_mapping_preserves_deliberately_unmapped_optional_columns(window, tmp_path):
+    source = tmp_path / "repeat.csv"
+    source.write_text("id,job,machine,run,operator\nWO-401-10,WO-401,LATHE-1,40,NEW\n", encoding="utf-8")
+    mapping = {key: key for key in ("id", "job", "machine", "run")}
+    imported = window.import_from(source, mapping)
+    dialog = MappingDialog(imported.project, source)
+    assert dialog.mapping == mapping
+    assert dialog.unit.currentText() == "minutes"
+    repeated = window.import_from(source, dialog.mapping)
+    assert repeated.project.operations["WO-401-10"].operator == window.project.operations["WO-401-10"].operator
+    # A changed export schema must require a deliberate replacement selection.
+    imported.project.mappings[source.name]["run"] = "old_duration"
+    dialog = MappingDialog(imported.project, source)
+    assert "run" not in dialog.mapping
+
+
+def test_clicking_bar_does_not_round_seconds_and_drag_retains_them(window, qtbot):
+    identity = "WO-401-10"
+    original = window.project.scenario.placements[identity].start + 17
+    window.set_placement(identity, Placement(original, False))
+    window.timeline_zoom.setCurrentIndex(1)
+    window.select_operation(identity)
+    bar = window.timeline.bars[identity]
+    start = window.timeline.mapFromScene(bar.sceneBoundingRect().center())
+    QTest.mouseClick(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    qtbot.wait(20)
+    assert window.project.scenario.placements[identity].start == original
+    end = start + QPoint(48, 0)
+    QTest.mousePress(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(window.timeline.viewport(), end, 40)
+    QTest.mouseRelease(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    qtbot.waitUntil(lambda: window.project.scenario.placements[identity].start != original, timeout=2000)
+    assert window.project.scenario.placements[identity].start == original + 3600
+
+
+def test_timeline_signal_preserves_epoch_after_2038(window, qtbot):
+    identity = "WO-401-10"
+    future = 2_300_000_000
+    window.timeline.moved.emit(identity, future)
+    qtbot.waitUntil(lambda: window.project.scenario.placements[identity].start == future, timeout=2000)
+
+
+def test_late_job_filter_includes_upstream_and_unscheduled_operations(window):
+    window.set_placement("WO-401-10", None)
+    window.late_only.setChecked(True)
+    visible = {window.operations_table.item(row, 0).text() for row in range(window.operations_table.rowCount())}
+    assert visible == {"WO-401-10", "WO-401-20", "WO-401-30"}
+    assert "1 late jobs (2 operations)" in window.metrics.text()
+
+
+def test_imported_constraints_are_inspectable_as_literal_text(window):
+    identity = "WO-401-20"
+    window.project.operations[identity].label = "<b>literal ERP description</b>"
+    dialog = PlacementDialog(window.project, identity, window)
+    details = dialog.findChild(QLabel, "operationDetails")
+    assert "WO-401-10" in details.text()
+    assert "2026-10-05T08:00:00-05:00" in details.text()
+    assert "2026-10-05T10:30:00-05:00" in details.text()
+    assert "<b>literal ERP description</b>" in details.text()
+    assert details.textFormat() == Qt.TextFormat.PlainText
+
+
+def test_project_zone_change_preserves_instants_and_shorter_horizon_shows_conflicts(window, monkeypatch):
+    original = deepcopy(window.project)
+
+    def change_zone(dialog):
+        dialog.zone.setText("Asia/Seoul")
+        dialog._accept()
+        return dialog.result()
+
+    monkeypatch.setattr(ProjectDialog, "exec", change_zone)
+    window.edit_project()
+    assert window.project.timezone == "Asia/Seoul"
+    assert window.project.horizon_start == original.horizon_start
+    assert window.project.horizon_end == original.horizon_end
+    assert window.project.machines == original.machines
+    assert window.project.operators == original.operators
+    assert window.project.scenarios == original.scenarios
+
+    def shorten_horizon(dialog):
+        dialog.begin.setText("2026-10-06T00:00:00-05:00")
+        dialog._accept()
+        return dialog.result()
+
+    monkeypatch.setattr(ProjectDialog, "exec", shorten_horizon)
+    window.edit_project()
+    assert window.project.scenarios == original.scenarios
+    assert window.project.machines == original.machines
+    assert any(issue.code == "outside_horizon" for issue in window.current_issues)
+    window.undo()
+    assert window.project.horizon_start == original.horizon_start
+
+
+@pytest.mark.parametrize("day,zone,hours", [
+    ("2026-03-08", "America/Havana", 23),
+    ("2026-11-01", "America/Havana", 25),
+    ("2026-09-06", "America/Santiago", 23),
+])
+def test_daily_ui_and_export_agree_on_midnight_dst(window, day, zone, hours):
+    window.project.timezone = zone
+    window.day_filter.setText(day)
+    window.refresh_daily()
+    assert not window.daily_error.text()
+    bounds = window._daily_bounds()
+    assert bounds == _day_range(day, zone)
+    assert bounds[1] - bounds[0] == hours * 3600
+
+
+def test_authored_light_palette_has_readable_text_in_all_active_states(window):
+    def luminance(color):
+        channels = [color.redF(), color.greenF(), color.blueF()]
+        linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+                  for value in channels]
+        return sum(a * b for a, b in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+    palette = window.palette()
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+        for foreground, background in ((QPalette.ColorRole.WindowText, QPalette.ColorRole.Window),
+                                       (QPalette.ColorRole.Text, QPalette.ColorRole.Base),
+                                       (QPalette.ColorRole.ButtonText, QPalette.ColorRole.Button),
+                                       (QPalette.ColorRole.HighlightedText, QPalette.ColorRole.Highlight)):
+            low, high = sorted((luminance(palette.color(group, foreground)),
+                                luminance(palette.color(group, background))))
+            assert (high + 0.05) / (low + 0.05) >= 4.5

@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QThread, Signal
-from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPen, QTextDocument
+from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPalette, QPen, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from .model import Operation, Placement, Project, Resource, Scenario, Window
-from .timeutil import format_timestamp, parse_timestamp, working_windows
+from .timeutil import day_bounds, format_timestamp, parse_timestamp, working_windows
 from .validator import validate
 
 TEXT = {
@@ -76,6 +76,7 @@ TEXT = {
 
 def _label(text: str, style: str = "") -> QLabel:
     label = QLabel(text)
+    label.setTextFormat(Qt.TextFormat.PlainText)
     label.setWordWrap(True)
     if style:
         label.setStyleSheet(style)
@@ -124,6 +125,27 @@ def _issues_text(issues) -> str:
     return "\n".join(f"{issue.severity.upper()} · {issue.code}: {issue.message}" for issue in issues)
 
 
+def _configure_appearance() -> None:
+    """Keep the app's authored light timeline and text legible in every OS theme."""
+    app = QApplication.instance()
+    app.setStyle("Fusion")
+    palette = QPalette()
+    colors = {
+        QPalette.ColorRole.Window: "#f7f9fb", QPalette.ColorRole.WindowText: "#172b3a",
+        QPalette.ColorRole.Base: "#ffffff", QPalette.ColorRole.AlternateBase: "#f0f4f7",
+        QPalette.ColorRole.Text: "#172b3a", QPalette.ColorRole.Button: "#e8edf2",
+        QPalette.ColorRole.ButtonText: "#172b3a", QPalette.ColorRole.BrightText: "#ffffff",
+        QPalette.ColorRole.ToolTipBase: "#ffffdc", QPalette.ColorRole.ToolTipText: "#172b3a",
+        QPalette.ColorRole.Highlight: "#187b80", QPalette.ColorRole.HighlightedText: "#ffffff",
+        QPalette.ColorRole.PlaceholderText: "#657586", QPalette.ColorRole.Link: "#12696e",
+    }
+    for role, color in colors.items():
+        palette.setColor(role, QColor(color))
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#657586"))
+    app.setPalette(palette)
+
+
 class MappingDialog(QDialog):
     """Explicit mapping with a bounded raw-data preview; never mutates Project."""
 
@@ -136,7 +158,7 @@ class MappingDialog(QDialog):
         self.resize(950, 720)
         self.path = Path(path)
         headers, rows = read_table(path)
-        saved = project.mappings.get(self.path.name, project.mappings.get("__last__", {}))
+        saved = project.mappings.get(self.path.name, project.mappings.get("__last__"))
         outer = QVBoxLayout(self)
         outer.addWidget(_label(f"{self.path.name} · {len(rows):,} rows · {project.timezone}", "font-weight: 600; font-size: 16px;"))
         outer.addWidget(_label("Required: stable operation ID, job, machine and run time. Dates require an ISO timestamp; include an offset for repeated DST times. Optional unmapped fields keep existing values. / 필수: 공정 ID, 작업, 기계, 실행 시간. 날짜는 ISO 형식입니다."))
@@ -157,9 +179,11 @@ class MappingDialog(QDialog):
             combo.addItem("— Not mapped / 매핑 없음 —", "")
             for header in headers:
                 combo.addItem(header, header)
-            selected = saved.get(field, "")
-            if selected not in headers:
-                selected = next((normalized[a] for a in aliases[field] if a in normalized), "")
+            # An omitted field in a saved mapping is an intentional decision to
+            # retain its existing values. Never auto-map it on repeat imports.
+            # Missing saved headers also require an explicit replacement.
+            selected = (saved.get(field, "") if saved is not None
+                        else next((normalized[a] for a in aliases[field] if a in normalized), ""))
             combo.setCurrentIndex(max(0, combo.findData(selected)))
             required = " *" if field in ("id", "job", "machine", "run") else ""
             form.addRow(field + required, combo)
@@ -167,7 +191,7 @@ class MappingDialog(QDialog):
         self.unit = QComboBox()
         self.unit.setObjectName("durationUnit")
         self.unit.addItems(["seconds", "minutes", "hours"])
-        self.unit.setCurrentText(saved.get("__duration_unit", "minutes"))
+        self.unit.setCurrentText((saved or {}).get("__duration_unit", "minutes"))
         form.addRow("Setup & run units / 시간 단위", self.unit)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -235,6 +259,16 @@ class PlacementDialog(QDialog):
         self.resize(630, 300)
         layout = QVBoxLayout(self)
         layout.addWidget(_label(f"{op.job} · {op.machine} · {_duration(op.duration)}", "font-weight:600;"))
+        details = _label(f"Description / 설명: {op.label or '—'}\n"
+                         f"Operator / 작업자: {op.operator or '—'}\n"
+                         f"Predecessors / 선행 공정: {'; '.join(op.predecessors) or '—'}\n"
+                         f"Release / 작업 가능 시각: {_time(op.release, project)}\n"
+                         f"Due / 납기: {_time(op.due, project)}")
+        details.setObjectName("operationDetails")
+        details.setAccessibleName("Imported operation details / 가져온 공정 정보")
+        details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
+                                       | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        layout.addWidget(details)
         layout.addWidget(_label(f"Display zone: {project.timezone}. ISO timestamp with offset is safest. Leave start empty to clear placement. / 시작 시간이 없으면 배치를 해제합니다."))
         form = QFormLayout()
         self.start = QLineEdit(_time(placement.start, project) if placement else "")
@@ -400,10 +434,13 @@ class _OperationBar(QGraphicsRectItem):
         super().mouseReleaseEvent(event)
         if self.locked:
             return
-        delta = round((self.x() - self.timeline.left) / self.timeline.scale_seconds / 60) * 60
-        start = self.timeline.origin + delta
+        original_x = self.timeline.left + (self.old_start - self.timeline.origin) * self.timeline.scale_seconds
+        delta = round((self.x() - original_x) / self.timeline.scale_seconds / 60) * 60
+        start = self.old_start + delta
         if start != self.old_start:
             self.timeline.moved.emit(self.operation_id, start)
+        else:
+            self.setPos(original_x, self.row_y)
 
     def mouseDoubleClickEvent(self, event):
         self.timeline.edit_requested.emit(self.operation_id)
@@ -411,7 +448,9 @@ class _OperationBar(QGraphicsRectItem):
 
 
 class TimelineView(QGraphicsView):
-    moved = Signal(str, int)
+    # Qt's `int` signal type is signed 32-bit. Python integers preserve UTC
+    # timestamps outside 1901–2038 throughout the model's supported range.
+    moved = Signal(str, object)
     edit_requested = Signal(str)
     operation_selected = Signal(str)
 
@@ -533,6 +572,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, project: Project | None = None):
         super().__init__()
+        _configure_appearance()
         self.project = project or self.blank_project()
         self.path: Path | None = None
         self.dirty = False
@@ -857,12 +897,16 @@ class MainWindow(QMainWindow):
         placements = self.project.scenario.placements
         query = self.filter.text().casefold().strip()
         errors = [issue for issue in self.current_issues if issue.severity == "error"]
-        late_count = sum(1 for op_id, p in placements.items() if op_id in operations and operations[op_id].due is not None and p.start + operations[op_id].duration > operations[op_id].due)
+        late_operations = {op_id for op_id, p in placements.items() if op_id in operations
+                           and operations[op_id].due is not None
+                           and p.start + operations[op_id].duration > operations[op_id].due}
+        late_jobs = {operations[op_id].job for op_id in late_operations}
+        late_count = len(late_operations)
         locked_count = sum(p.locked for p in placements.values())
         if self.language == "ko":
-            self.metrics.setText(f"공정 {len(operations)}  ·  배치 {len(placements)}  ·  미배치 {len(set(operations) - set(placements))}  ·  지연 {late_count}  ·  고정 {locked_count}  ·  오류 {len(errors)}")
+            self.metrics.setText(f"공정 {len(operations)}  ·  배치 {len(placements)}  ·  미배치 {len(set(operations) - set(placements))}  ·  지연 작업 {len(late_jobs)} (공정 {late_count})  ·  고정 {locked_count}  ·  오류 {len(errors)}")
         else:
-            self.metrics.setText(f"{len(operations)} operations  ·  {len(placements)} placed  ·  {len(set(operations) - set(placements))} unscheduled  ·  {late_count} late  ·  {locked_count} locked  ·  {len(errors)} conflicts")
+            self.metrics.setText(f"{len(operations)} operations  ·  {len(placements)} placed  ·  {len(set(operations) - set(placements))} unscheduled  ·  {len(late_jobs)} late jobs ({late_count} operations)  ·  {locked_count} locked  ·  {len(errors)} conflicts")
         self.operations_table.blockSignals(True)
         self.operations_table.setRowCount(0)
         visible = set()
@@ -871,7 +915,7 @@ class MainWindow(QMainWindow):
             late = placement is not None and op.due is not None and placement.start + op.duration > op.due
             if query and query not in " ".join((op.id, op.job, op.machine, op.operator, op.label)).casefold():
                 continue
-            if self.late_only.isChecked() and not late:
+            if self.late_only.isChecked() and op.job not in late_jobs:
                 continue
             visible.add(op.id)
             state = ("지연" if self.language == "ko" else "Late") if late else ("배치" if self.language == "ko" else "Placed") if placement else ("미배치" if self.language == "ko" else "Unscheduled")
@@ -930,13 +974,7 @@ class MainWindow(QMainWindow):
         text = self.day_filter.text().strip()
         if not text:
             return None
-        day = date.fromisoformat(text)
-        if day.isoformat() != text:
-            raise ValueError("Use YYYY-MM-DD, for example 2026-10-08.")
-        zone = ZoneInfo(self.project.timezone)
-        start = datetime.combine(day, datetime.min.time(), zone)
-        end = datetime.combine(day + timedelta(days=1), datetime.min.time(), zone)
-        return int(start.timestamp()), int(end.timestamp())
+        return day_bounds(text, self.project.timezone)
 
     def refresh_daily(self, *_):
         self.daily_table.setRowCount(0)

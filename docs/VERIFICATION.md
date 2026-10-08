@@ -1,14 +1,16 @@
 # Release verification
 
-The source suite currently has **202 passing tests** on macOS 27.0.1 arm64 with Python 3.12.13. All source, test and release scripts pass Ruff. The independent acceptance review and realistic workload measurements are in [QA_REVIEW.md](QA_REVIEW.md); repeated import and official OR-Tools comparisons are in [FIT.md](FIT.md).
+The source suite currently has **231 passing tests** on macOS 27.0.1 arm64 with Python 3.12.13. All source, test and release scripts pass Ruff. The independent acceptance review and realistic workload measurements are in [QA_REVIEW.md](QA_REVIEW.md); repeated import and official OR-Tools comparisons are in [FIT.md](FIT.md).
 
 ## Native GUI
 
-On 2026-10-08, 13 GUI tests passed against the actual macOS Cocoa platform in 1.91 seconds. They exercise real QTest drag, keyboard activation, start/lock editing, undo, saved/reopened scenarios, import review cancellation, failed imports/saves, close/save cancellation, calendar gaps/overnight/DST rejection, safe retirement, solver worker review, rejected fake solver success and Korean controls. This was not an offscreen-only run.
+On 2026-10-08, 23 GUI tests passed against the actual macOS Cocoa platform in the native Cocoa test run. They exercise real QTest drag, keyboard activation, start/lock editing, undo, saved/reopened scenarios, import review cancellation, failed imports/saves, close/save cancellation, calendar gaps/overnight/DST rejection, safe retirement, solver worker review, rejected fake solver success and Korean controls. This was not an offscreen-only run.
 
-A separate Cocoa launch completed the packaged-smoke workflow in 0.698 seconds: demo solve, independent validation, repeated import preserving locks, save/reload/backup, CSV/HTML, native window and undo. See [native-smoke.json](native-smoke.json) and [Mac screenshot](screenshots/macos-workbench.png).
+A separate Cocoa launch completed the packaged-smoke workflow in under one second: demo solve, independent validation, repeated import preserving locks, save/reload/backup, CSV/HTML, native window, real timeline drag and undo, Korean controls, and accessible widget names. See [native-smoke.json](native-smoke.json) and [Mac screenshot](screenshots/macos-workbench.png) and [Korean screenshot](screenshots/macos-korean.png).
 
 The external CUA app-selection call failed to return and was stopped. It provided no accessibility or manual-use evidence. Native Qt tests continued independently. Controls expose accessible names and labels and offer keyboard equivalents, but no screen-reader user session or human planner usability study has been performed. Korean covers major controls and quickstart; diagnostic details remain partly English.
+
+Independent review additionally reproduced and fixed saved optional-mapping choices being reset, second-precision starts changing on a click, post-2038 drag overflow, dark OS theme contrast, whole-job late filtering, and DST transitions at local midnight. Regressions cover each case.
 
 ## Cross-platform release gate
 

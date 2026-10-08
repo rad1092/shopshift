@@ -16,6 +16,7 @@ def run_smoke(app, directory: Path) -> int:
     started = time.perf_counter()
     window = None
     try:
+        from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
 
         from .demo import demo_project
@@ -73,8 +74,31 @@ def run_smoke(app, directory: Path) -> int:
         window.undo()
         assert window.project.to_dict() == before
         checks.append("native widget launch and undo")
+        drag_id = next(key for key, value in window.project.scenario.placements.items() if not value.locked)
+        original_start = window.project.scenario.placements[drag_id].start
+        window.timeline_zoom.setCurrentIndex(1)
+        window.select_operation(drag_id)
+        bar = window.timeline.bars[drag_id]
+        window.timeline.ensureVisible(bar)
+        QTest.qWait(30)
+        point = window.timeline.mapFromScene(bar.sceneBoundingRect().center())
+        destination = point + QPoint(48, 0)
+        QTest.mousePress(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        QTest.mouseMove(window.timeline.viewport(), destination, 40)
+        QTest.mouseRelease(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=destination)
+        app.processEvents()
+        assert window.project.scenario.placements[drag_id].start == original_start + 3600
+        window.undo()
+        assert window.project.scenario.placements[drag_id].start == original_start
+        checks.append("real timeline drag and undo in installed GUI")
         app.processEvents()
         assert window.grab().save(str(directory / "screenshot.png"))
+        window.language_box.setCurrentIndex(1)
+        app.processEvents()
+        assert window.grab().save(str(directory / "screenshot-ko.png"))
+        assert window.timeline.accessibleName()
+        assert window.operations_table.accessibleName()
+        checks.append("Korean controls and named accessible schedule widgets")
         window.set_project(recovered, target)
         window.close()
         app.processEvents()

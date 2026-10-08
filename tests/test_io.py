@@ -6,6 +6,7 @@ import copy
 import csv
 import io
 import json
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ from shopshift.storage import (
     restore_project,
     save_project,
 )
-from shopshift.timeutil import format_timestamp, parse_timestamp, working_windows
+from shopshift.timeutil import day_bounds, format_timestamp, parse_timestamp, working_windows
 from shopshift.validator import validate
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
@@ -206,6 +207,36 @@ def test_explicit_offsets_disambiguate_and_round_trip():
     assert parse_timestamp("2026-10-05T13:00Z", "America/Chicago") == parse_timestamp("2026-10-05T08:00", "America/Chicago")
 
 
+@pytest.mark.parametrize(("day", "zone", "start", "end"), [
+    ("2026-03-08", "America/New_York", "2026-03-08T05:00Z", "2026-03-09T04:00Z"),
+    ("2026-11-01", "America/New_York", "2026-11-01T04:00Z", "2026-11-02T05:00Z"),
+    ("2026-03-08", "America/Havana", "2026-03-08T05:00Z", "2026-03-09T04:00Z"),
+    ("2026-11-01", "America/Havana", "2026-11-01T04:00Z", "2026-11-02T05:00Z"),
+    ("2026-09-06", "America/Santiago", "2026-09-06T04:00Z", "2026-09-07T03:00Z"),
+    ("1986-01-01", "Asia/Kathmandu", "1985-12-31T18:30Z", "1986-01-01T18:15Z"),
+    ("1972-01-07", "Africa/Monrovia", "1972-01-07T00:44:30Z", "1972-01-08T00:00Z"),
+    ("2011-12-29", "Pacific/Apia", "2011-12-29T10:00Z", "2011-12-30T10:00Z"),
+    ("2011-12-31", "Pacific/Apia", "2011-12-30T10:00Z", "2011-12-31T10:00Z"),
+])
+def test_calendar_day_bounds_use_earliest_midnight_or_first_represented_instant(day, zone, start, end):
+    expected = tuple(int(datetime.fromisoformat(value).timestamp()) for value in (start, end))
+    assert day_bounds(day, zone) == expected
+    assert day_bounds(date.fromisoformat(day), zone) == expected
+
+
+@pytest.mark.parametrize(("day", "zone", "message"), [
+    ("2011-12-30", "Pacific/Apia", "does not exist"),
+    ("9999-12-31", "UTC", "supported UTC years"),
+    ("20260308", "UTC", "YYYY-MM-DD"),
+    ("2026-02-30", "UTC", "day is out of range"),
+    (datetime(2026, 3, 8), "UTC", "YYYY-MM-DD"),
+    (None, "UTC", "YYYY-MM-DD"),
+])
+def test_calendar_day_bounds_reject_skipped_dates_and_invalid_endpoints(day, zone, message):
+    with pytest.raises(ValueError, match=message):
+        day_bounds(day, zone)
+
+
 @pytest.mark.parametrize("value", ["2026-10-05", "10/05/2026 08:00", "2026-10-05T08:00:00.1", "2026-10-05T08:00+01:99", "2026-02-30T08:00"])
 def test_dates_never_guess_or_round(value):
     with pytest.raises(ValueError):
@@ -321,3 +352,36 @@ def test_daily_list_includes_overnight_and_unscheduled(tmp_path):
     export_csv(project, path, day="2026-10-06")
     rows = list(csv.DictReader(io.StringIO(path.read_text(encoding="utf-8-sig"))))
     assert {row["operation_id"] for row in rows} == {"night", "waiting"}
+
+
+@pytest.mark.parametrize(("day", "zone", "start", "end"), [
+    ("2026-03-08", "America/Havana", "2026-03-08T05:00Z", "2026-03-09T04:00Z"),
+    ("2026-11-01", "America/Havana", "2026-11-01T04:00Z", "2026-11-02T05:00Z"),
+    ("2026-09-06", "America/Santiago", "2026-09-06T04:00Z", "2026-09-07T03:00Z"),
+])
+def test_daily_exports_cover_midnight_dst_transitions(tmp_path, day, zone, start, end):
+    low, high = (int(datetime.fromisoformat(value).timestamp()) for value in (start, end))
+    project = Project(timezone=zone, horizon_start=low - 3600, horizon_end=high + 3600)
+    project.machines["M"] = Resource("M", [Window(project.horizon_start, project.horizon_end)])
+    starts = {"before-day": low - 60, "first-minute": low, "last-minute": high - 60, "after-day": high}
+    if day == "2026-11-01":
+        starts["repeated-midnight"] = low + 3600
+    project.operations = {key: Operation(key, "job", "M", run=60) for key in starts}
+    project.scenario.placements = {key: Placement(value) for key, value in starts.items()}
+    expected = set(starts) - {"before-day", "after-day"}
+    csv_path, html_path = tmp_path / "day.csv", tmp_path / "day.html"
+    export_csv(project, csv_path, day=date.fromisoformat(day))
+    export_html(project, html_path, day=day)
+    rows = list(csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8-sig"))))
+    assert {row["operation_id"] for row in rows} == expected
+    markup = html_path.read_text(encoding="utf-8")
+    assert all(f"<td>{key}</td>" in markup for key in expected)
+    assert "<td>before-day</td>" not in markup and "<td>after-day</td>" not in markup
+
+
+def test_daily_export_rejects_an_entirely_skipped_civil_date(tmp_path):
+    project = Project(timezone="Pacific/Apia", horizon_start=0, horizon_end=1)
+    destination = tmp_path / "skipped.csv"
+    with pytest.raises(StorageProblem, match="Civil date 2011-12-30 does not exist"):
+        export_csv(project, destination, day="2011-12-30")
+    assert not destination.exists()

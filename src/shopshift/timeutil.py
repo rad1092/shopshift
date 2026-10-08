@@ -7,7 +7,7 @@ zone. Supply an ISO offset for repeated clocks at the end of daylight saving.
 from __future__ import annotations
 
 import re
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from datetime import timezone as dt_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -75,6 +75,53 @@ def format_timestamp(epoch: int, timezone: str) -> str:
         return datetime.fromtimestamp(epoch, _zone(timezone)).isoformat(timespec="seconds")
     except (OverflowError, OSError) as exc:
         raise ValueError("Timestamp cannot be displayed in this timezone within years 0001–9999") from exc
+
+
+def day_bounds(day: date | str, timezone: str) -> tuple[int, int]:
+    """Return the UTC half-open interval for a local calendar date.
+
+    A repeated midnight uses its earliest occurrence. If midnight falls in a
+    forward clock gap, the boundary is the first represented instant after it.
+    An entirely skipped date is rejected. Unlike an operation timestamp, a
+    calendar date needs no offset to distinguish the two midnight occurrences.
+    """
+    try:
+        selected = date.fromisoformat(day) if isinstance(day, str) else day
+        if type(selected) is not date or (isinstance(day, str) and selected.isoformat() != day):
+            raise ValueError("Day must be a date or YYYY-MM-DD")
+        following = selected + timedelta(days=1)
+        zone = _zone(timezone)
+
+        def local(instant: int) -> datetime:
+            return datetime.fromtimestamp(instant, zone).replace(tzinfo=None)
+
+        def boundary(value: date) -> int:
+            midnight = datetime.combine(value, time())
+            candidates = sorted({_epoch_seconds(midnight.replace(tzinfo=zone, fold=fold))
+                                 for fold in (0, 1)})
+            represented = [instant for instant in candidates if local(instant) == midnight]
+            if represented:
+                return represented[0]
+            # ZoneInfo's two fold choices bracket a forward transition when
+            # the wall time is missing. Locate its first second logarithmically
+            # rather than scanning an hour (or a skipped 24-hour civil date).
+            low, high = candidates[0], candidates[-1]
+            if not local(low) < midnight < local(high):
+                raise ValueError(f"Cannot resolve calendar boundary {value} in {timezone}")
+            while high - low > 1:
+                middle = (low + high) // 2
+                if local(middle) < midnight:
+                    low = middle
+                else:
+                    high = middle
+            return high
+
+        start = boundary(selected)
+        if local(start).date() != selected:
+            raise ValueError(f"Civil date {selected} does not exist in {timezone}")
+        return start, boundary(following)
+    except (OverflowError, OSError) as exc:
+        raise ValueError("Work-list day boundaries must fit within supported UTC years 0001–9999") from exc
 
 
 def working_windows(start: int, end: int, timezone: str, start_hour: int = 8, end_hour: int = 17) -> list[Window]:

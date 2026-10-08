@@ -41,6 +41,26 @@ analysis = Analysis(
               'PySide6.QtSql', 'PySide6.QtMultimedia'],
     noarchive=False,
 )
+# Distro desktop libraries stay with the host's package manager. Their exact
+# build and source/license inventory is outside our audited wheel inventory.
+# Resolve symlinks before checking: wheel/uv libraries remain bundled even when
+# the checkout itself is linked elsewhere. Keep the CPython runtime in all cases.
+external_system_libraries = []
+if sys.platform.startswith('linux'):
+    system_roots = {Path(path).resolve() for path in ('/lib', '/lib64', '/usr/lib', '/usr/lib64')}
+    retained_binaries = []
+    for target, source, kind in analysis.binaries:
+        origin = Path(source).resolve()
+        is_system = any(origin.is_relative_to(directory) for directory in system_roots)
+        if is_system and not origin.name.startswith('libpython'):
+            external_system_libraries.append(target)
+        else:
+            retained_binaries.append((target, source, kind))
+    analysis.binaries = retained_binaries
+external_manifest = root / 'build' / 'external-system-libraries.json'
+external_manifest.write_text(json.dumps(sorted(set(external_system_libraries)), indent=2) + '\n')
+analysis.datas.append(('external-system-libraries.json', str(external_manifest), 'DATA'))
+
 # Fail if an optional build/test dependency slipped into frozen Python modules
 # without its distribution notice being accounted for.
 normalize = lambda value: value.lower().replace('_', '-').replace('.', '-')

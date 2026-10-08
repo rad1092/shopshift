@@ -170,7 +170,9 @@ def build(output: Path, *, test_wheel: bool, skip_download: bool) -> dict:
             wheel_smoke = verify_smoke(smoke_output / 'wheel')
     for distribution in python_dist.iterdir():
         shutil.copyfile(distribution, output / distribution.name)
-    sources_archive = output / f'ShopShift-{version()}-corresponding-sources.tar.gz'
+    # Installed package notices and native dependency versions may differ by OS.
+    # Keep each inventory paired with its platform's archive/checksum manifest.
+    sources_archive = output / f'{stem}-corresponding-sources.tar.gz'
     with tarfile.open(sources_archive, 'w:gz', compresslevel=1) as target:
         for source in manifest['sources']:
             target.add(source_cache / source['file'], arcname=f'upstream/{source["file"]}')
@@ -186,6 +188,8 @@ def build(output: Path, *, test_wheel: bool, skip_download: bool) -> dict:
               'macos_signature': 'ad-hoc only' if sys.platform == 'darwin' else None,
               'seconds': round(time.monotonic() - started, 2),
               'bundle': bundle_audit, 'packaged_smoke': packaged_smoke, 'wheel_smoke': wheel_smoke,
+              'external_system_libraries': json.loads(
+                  (ROOT / 'build' / 'external-system-libraries.json').read_text()),
               'dependencies': [{'name': item['name'], 'version': item['version']} for item in manifest['packages']]}
     report_path = output / f'{stem}-build-report.json'
     report_path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

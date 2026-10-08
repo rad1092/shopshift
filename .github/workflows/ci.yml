@@ -40,11 +40,18 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 fonts-noto-cjk
+          sudo apt-get install -y xvfb libegl1 libopengl0 libgl1 libdbus-1-3 libfontconfig1 libfreetype6 libglib2.0-0t64 libcups2t64 libx11-xcb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 fonts-noto-cjk
       - name: Install locked dependencies
         run: uv sync --frozen --extra dev --python 3.12.13
       - name: Lint
         run: uv run --no-sync ruff check src tests scripts
+      - name: Linux Qt loader preflight
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p build
+          ldd .venv/lib/python3.12/site-packages/PySide6/Qt/plugins/platforms/libqxcb.so | tee build/linux-qt-dependencies.txt
+          QT_DEBUG_PLUGINS=1 xvfb-run -a uv run --no-sync python -c "from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt platform:', app.platformName())" 2>&1 | tee build/linux-qt-preflight.log
       - name: Tests and GUI smoke (Linux X11)
         if: runner.os == 'Linux'
         run: |
@@ -76,6 +83,9 @@ jobs:
           name: evidence-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: |
             build/test-results.xml
+            build/linux-qt-dependencies.txt
+            build/linux-qt-preflight.log
+            build/external-system-libraries.json
             build/source-smoke/
             build/release-smoke/
             build/release-licenses/manifest.json

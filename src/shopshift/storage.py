@@ -8,11 +8,10 @@ import io
 import json
 import os
 import tempfile
-from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from .model import Project
-from .timeutil import format_timestamp, parse_timestamp
+from .timeutil import day_bounds, format_timestamp
 
 FORMAT_VERSION = 1
 MAX_PROJECT_BYTES = 20 * 1024 * 1024
@@ -206,12 +205,8 @@ def _day_range(day, timezone: str) -> tuple[int, int] | None:
     if day is None:
         return None
     try:
-        selected = date.fromisoformat(day) if isinstance(day, str) else day
-        if type(selected) is not date:
-            raise ValueError("Day must be a date or YYYY-MM-DD")
-        return (parse_timestamp(datetime.combine(selected, time()).isoformat(), timezone),
-                parse_timestamp(datetime.combine(selected + timedelta(days=1), time()).isoformat(), timezone))
-    except (ValueError, OverflowError) as exc:
+        return day_bounds(day, timezone)
+    except ValueError as exc:
         raise StorageProblem(f"Invalid work-list day: {exc}") from exc
 
 

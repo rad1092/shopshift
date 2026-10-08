@@ -17,6 +17,18 @@ Windows/Linux distribution is covered. Linux requires desktop system libraries
 including GL/EGL, xkbcommon, and XCB; it is not a statically linked universal Linux
 binary. No Intel macOS or Linux arm64 package is supplied by this matrix.
 
+On Ubuntu 24.04, the desktop prerequisites used by CI can be installed with:
+
+```sh
+sudo apt-get install libegl1 libopengl0 libgl1 libdbus-1-3 libfontconfig1 libfreetype6 libglib2.0-0t64 libcups2t64 libx11-xcb1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 fonts-noto-cjk
+```
+
+Linux libraries originating in `/lib` or `/usr/lib` remain system dependencies;
+they are not redistributed in ShopShift. The bundle and build report record their
+names in `external-system-libraries.json` / `external_system_libraries`. Qt and
+other libraries from the pinned Python wheels remain bundled. Install prerequisites
+once using your distribution's package manager; running the app uses no network.
+
 **These releases are not Developer ID signed, Authenticode signed, or notarized.**
 macOS binaries have only a local ad-hoc signature, required by the platform; it
 does not identify a trusted publisher. Gatekeeper/SmartScreen can warn or block
@@ -59,8 +71,10 @@ on the exact release commit before the resulting artifacts are published.
 
 The bundled `licenses/manifest.json` lists every runtime Python dependency and
 native source/notice download. Full corresponding sources and license texts are
-also shipped in `ShopShift-<version>-corresponding-sources.tar.gz`; preserve this
-asset on mirrors. Download receipts verify a cached archive has not changed.
+also shipped in `ShopShift-<version>-<os>-<arch>-corresponding-sources.tar.gz`;
+preserve the source asset matching each desktop archive on mirrors. The per-OS
+manifest includes the dependencies from that platform's build. Download receipts
+verify a cached archive has not changed.
 Source URLs and hashes are recorded; upstream downloads use HTTPS. The helper
 refuses an unaudited Qt/OR-Tools version, rather than silently reusing an old native
 license inventory. A dependency update requires reviewing that inventory again.

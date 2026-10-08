@@ -14,12 +14,15 @@ package metadata, full license/copyright notices, and notices from the upstream
 native dependency source archives. The manifest records package versions, source
 URLs, SHA-256 hashes, and archive sizes. PySide's wheel does not itself include all
 license texts, so the release helper obtains them from the matching official sources.
+Linux distro libraries from `/lib` and `/usr/lib` are not bundled; the package
+records those external dependencies in `external-system-libraries.json`.
 
-The accompanying `ShopShift-<version>-corresponding-sources.tar.gz` release asset
+The accompanying `ShopShift-<version>-<os>-<arch>-corresponding-sources.tar.gz` release asset
 provides Qt 6.11.2 (qtbase and qtwayland), PySide6/Shiboken6 6.11.2, OR-Tools 9.15,
 its native dependency sources (including COIN-OR and Eigen), and CPython sources.
 The OR-Tools source archive contains the dependency build definitions and patches.
-The manifest records the exact sources included. Download this asset from the
+The manifest records the exact sources included. Download the asset matching your
+desktop archive's OS and architecture from the
 [same ShopShift release](https://github.com/rad1092/shopshift/releases) at no charge.
 Keep it available wherever you redistribute a binary. Source archives include
 components that are not used; their presence does not imply those components ship

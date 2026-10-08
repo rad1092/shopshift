@@ -4,6 +4,8 @@
 
 ShopShift is a desktop scheduling workbench for one planner at a small shop. Import a daily CSV/XLSX export, preserve manual starts and locks by stable operation ID, see why a plan conflicts, compare a scenario, and print or export a daily work list. The app has no account, server, telemetry, ERP write access or machine control.
 
+![ShopShift native Mac workbench](docs/screenshots/macos-workbench.png)
+
 This is a bounded first release, not a replacement ERP. It is useful when fixed machines, fixed operators, precedence and explicit calendars describe your planning problem. See [product limits](docs/PRODUCT.md) and the [evidence behind the scope](docs/FIT.md).
 
 ## Get started
