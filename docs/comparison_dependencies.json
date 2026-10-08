@@ -1,0 +1,138 @@
+{
+  "measured_at_utc": "2026-10-08T01:33:50.503692+00:00",
+  "host_python": "3.12.13",
+  "packages": [
+    {
+      "name": "ortools",
+      "version": "9.15.6755",
+      "metadata_url": "https://pypi.org/pypi/ortools/9.15.6755/json",
+      "requires_python": ">=3.9",
+      "license": "Apache 2.0",
+      "dependencies": [
+        "absl-py>=2.0.0",
+        "numpy>=2.0.2",
+        "pandas>=2.0.0",
+        "protobuf<6.34,>=6.33.1",
+        "typing-extensions>=4.12",
+        "immutabledict>=3.0.0"
+      ],
+      "selected_wheels": [
+        {
+          "filename": "ortools-9.15.6755-cp312-cp312-macosx_10_15_x86_64.whl",
+          "compressed_bytes": 23926322,
+          "sha256": "ae1c6e1fd844b4d756b22eb6c0ed574ea4342ee206d807c4f903039e748228fa"
+        },
+        {
+          "filename": "ortools-9.15.6755-cp312-cp312-macosx_11_0_arm64.whl",
+          "compressed_bytes": 21912940,
+          "sha256": "1e16686c2b457fa6242c474ab890ee1712347ab53678e0d2fab307ae03e97a4b"
+        },
+        {
+          "filename": "ortools-9.15.6755-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+          "compressed_bytes": 27646561,
+          "sha256": "3cd6bec0a2e00e3891a53e3b436f45a1000269f302085572f49e9856b7f8eaf0"
+        },
+        {
+          "filename": "ortools-9.15.6755-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "compressed_bytes": 29838435,
+          "sha256": "033836c0eb33bc72697a299e0caedbb25fc9d1cee0b13832d69cb30405f57b3e"
+        },
+        {
+          "filename": "ortools-9.15.6755-cp312-cp312-win_amd64.whl",
+          "compressed_bytes": 23883161,
+          "sha256": "487796301fd9dad55f9cf21f9313c834697f74306d1a59f002e152862f8eb1b5"
+        }
+      ]
+    },
+    {
+      "name": "PySide6-Essentials",
+      "version": "6.11.2",
+      "metadata_url": "https://pypi.org/pypi/PySide6-Essentials/6.11.2/json",
+      "requires_python": "<3.15,>=3.10",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "dependencies": [
+        "shiboken6==6.11.2"
+      ],
+      "selected_wheels": [
+        {
+          "filename": "pyside6_essentials-6.11.2-cp310-abi3-macosx_13_0_universal2.whl",
+          "compressed_bytes": 110800753,
+          "sha256": "77795c145202e65a78d88f7cd409d186e3ba23d159bdb3ba2dcd159ae5e5f0d9"
+        },
+        {
+          "filename": "pyside6_essentials-6.11.2-cp310-abi3-manylinux_2_34_x86_64.whl",
+          "compressed_bytes": 80108947,
+          "sha256": "aaf9f25f0f324874085fa5b26a610318db8a8e243cf85bb3e5400595191c7778"
+        },
+        {
+          "filename": "pyside6_essentials-6.11.2-cp310-abi3-manylinux_2_39_aarch64.whl",
+          "compressed_bytes": 79575497,
+          "sha256": "d3ec6e1885c46e57f16364f38ea8040ffc5dc0b18341058f608fede3ba930567"
+        },
+        {
+          "filename": "pyside6_essentials-6.11.2-cp310-abi3-win_amd64.whl",
+          "compressed_bytes": 76913043,
+          "sha256": "c8a29def77032773a30879f7f24415b5395ad08592d147c170824ef4c735dfc1"
+        },
+        {
+          "filename": "pyside6_essentials-6.11.2-cp310-abi3-win_arm64.whl",
+          "compressed_bytes": 58125520,
+          "sha256": "fadd75c5c20800d64dd0a586ea8cb337c5e630aa2246df0e5105738afa46e02c"
+        }
+      ]
+    },
+    {
+      "name": "shiboken6",
+      "version": "6.11.2",
+      "metadata_url": "https://pypi.org/pypi/shiboken6/6.11.2/json",
+      "requires_python": "<3.15,>=3.10",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only",
+      "dependencies": null,
+      "selected_wheels": [
+        {
+          "filename": "shiboken6-6.11.2-cp310-abi3-macosx_13_0_universal2.whl",
+          "compressed_bytes": 476674,
+          "sha256": "53659683b1f7a08e9f87eff9b1065f1ceb7110cd7a4bc09fdf5efe43d286604d"
+        },
+        {
+          "filename": "shiboken6-6.11.2-cp310-abi3-manylinux_2_34_x86_64.whl",
+          "compressed_bytes": 272435,
+          "sha256": "7a7a0a72a9ed26c9bf77d42246b1c736486befb8f31aa2fb29957ea4cdd1c1c2"
+        },
+        {
+          "filename": "shiboken6-6.11.2-cp310-abi3-manylinux_2_39_aarch64.whl",
+          "compressed_bytes": 270668,
+          "sha256": "4bbbd6fa4d7cff5ec5e12bc4c10e1d845fa30c89457ecb13cc64f7bddb77f6f9"
+        },
+        {
+          "filename": "shiboken6-6.11.2-cp310-abi3-win_amd64.whl",
+          "compressed_bytes": 1226578,
+          "sha256": "6ab0eba1c904455df621f9a6df3ca2bb896bab8670572d2bc4e37804ae91f19a"
+        },
+        {
+          "filename": "shiboken6-6.11.2-cp310-abi3-win_arm64.whl",
+          "compressed_bytes": 1784669,
+          "sha256": "97c49432488df958f0308736f3d15b6915d8826fc380af17bb4b9ec5c4a5e81b"
+        }
+      ]
+    },
+    {
+      "name": "openpyxl",
+      "version": "3.1.5",
+      "metadata_url": "https://pypi.org/pypi/openpyxl/3.1.5/json",
+      "requires_python": ">=3.8",
+      "license": "MIT",
+      "dependencies": [
+        "et-xmlfile"
+      ],
+      "selected_wheels": [
+        {
+          "filename": "openpyxl-3.1.5-py2.py3-none-any.whl",
+          "compressed_bytes": 250910,
+          "sha256": "5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2"
+        }
+      ]
+    }
+  ],
+  "size_scope": "PyPI compressed wheels, excluding transitive dependencies and packaged application overhead"
+}

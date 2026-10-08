@@ -1,0 +1,84 @@
+name: Test and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shopshift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-package:
+    name: ${{ matrix.os }} tests and installed app
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      UV_CONCURRENT_DOWNLOADS: '2'
+      UV_CONCURRENT_BUILDS: '1'
+      UV_CONCURRENT_INSTALLS: '2'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: '3.12.13'
+          enable-cache: true
+      - name: Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libegl1 libopengl0 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 fonts-noto-cjk
+      - name: Install locked dependencies
+        run: uv sync --frozen --extra dev --python 3.12.13
+      - name: Lint
+        run: uv run --no-sync ruff check src tests scripts
+      - name: Tests and GUI smoke (Linux X11)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a uv run --no-sync pytest -q --junitxml=build/test-results.xml
+          xvfb-run -a uv run --no-sync python -m shopshift --smoke-test build/source-smoke
+      - name: Tests and GUI smoke (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: |
+          uv run --no-sync pytest -q --junitxml=build/test-results.xml
+          uv run --no-sync python -m shopshift --smoke-test build/source-smoke
+      - name: Build, install from archive, launch and clean wheel install (Linux X11)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run --no-sync python scripts/build_release.py --test-wheel
+      - name: Build, install from archive, launch and clean wheel install (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: uv run --no-sync python scripts/build_release.py --test-wheel
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: |
+            build/test-results.xml
+            build/source-smoke/
+            build/release-smoke/
+            build/release-licenses/manifest.json
+            build/pyinstaller/shopshift/warn-shopshift.txt
+          if-no-files-found: warn
+          retention-days: 14

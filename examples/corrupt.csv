@@ -1,0 +1,3 @@
+Operation,Work Order,Work Center,Assigned To,Setup Min,Run Min,After,Ready At,Due At,Description
+WO-401-10,WO-401,SAW,Morgan,10.0,20.0,,2026-10-05T08:00:00-05:00,2026-10-05T10:30:00-05:00,Pump mounting plate / Cut stock
+WO-401-10,WO-401,SAW,Morgan,10.0,20.0,,2026-10-05T08:00:00-05:00,2026-10-05T10:30:00-05:00,Pump mounting plate / Cut stock

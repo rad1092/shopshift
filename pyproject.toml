@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shopshift"
+version = "0.1.0"
+description = "Offline ERP-export scheduling workbench for a single shop planner"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "MIT"
+authors = [{name="ShopShift contributors"}]
+dependencies = ["PySide6-Essentials>=6.8,<7", "ortools>=9.12,<10", "openpyxl>=3.1.5,<4", "defusedxml>=0.7.1", "tzdata>=2025.1"]
+
+[project.optional-dependencies]
+dev = ["hatchling>=1.27", "pytest>=8", "pytest-qt>=4.4", "hypothesis>=6", "ruff>=0.11", "pyinstaller>=6.12", "pip-licenses>=5", "build>=1.2"]
+[project.scripts]
+shopshift = "shopshift.__main__:main"
+[tool.hatch.build.targets.wheel]
+packages = ["src/shopshift"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "BLE"]

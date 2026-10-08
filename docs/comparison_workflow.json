@@ -1,0 +1,158 @@
+{
+  "measured_at_utc": "2026-10-08T01:38:24.739079+00:00",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "python": "3.12.13",
+  "scope": "Synthetic API workflow, no GUI or human time measurement; temporary generated fixtures cleaned up",
+  "official_instance_through_product": {
+    "status": "optimal",
+    "objective": 11.0,
+    "bound": 11.0,
+    "makespan": 11,
+    "wall_seconds": 0.16944379100459628,
+    "independent_oracle": {
+      "valid": true,
+      "operations": 8,
+      "resource_pairs": 7,
+      "precedences": 5
+    }
+  },
+  "timings_seconds": {
+    "initial_csv_import": 0.0014303750067483634,
+    "initial_suggestion": 2.0013114169996697,
+    "save_initial": 0.001483291998738423,
+    "reopen_initial": 0.000418415991589427,
+    "reimport_xlsx": 0.004289083008188754,
+    "reimport_validation": 0.00010508400737307966,
+    "revised_suggestion": 2.0046532499836758,
+    "daily_csv": 0.0005742500070482492,
+    "daily_html": 0.00041974999476224184,
+    "save_revised": 0.0015842920111026615,
+    "backup": 0.0009082910255528986,
+    "explicit_restore": 0.0018927909841295332
+  },
+  "fixture": {
+    "day1_rows": 36,
+    "day2_rows": 38,
+    "merged_operations": 39,
+    "machines": 3,
+    "operators": 3,
+    "zone": "America/Chicago",
+    "calendar": "Weekdays 08:00\u201312:00 / 13:00\u201317:00, reviewed synthetic assumption",
+    "day1_sha256": "65c5903b83f69b6784c0b7a2b9e2d9a89ba7e28dc48cfe691693ccb403c97c2d"
+  },
+  "first_plan": {
+    "status": "feasible",
+    "objective": 207000.0,
+    "bound": 116700.0,
+    "independent_oracle": {
+      "valid": true,
+      "operations": 36,
+      "resource_pairs": 198,
+      "precedences": 24
+    }
+  },
+  "reimport": {
+    "updated": [
+      "WO0003-10"
+    ],
+    "added": [
+      "WO0013-30",
+      "WO0013-20",
+      "WO0013-10"
+    ],
+    "retained": [
+      "WO0012-30"
+    ],
+    "warnings": [
+      "Retained 1 omitted operations; no deletion inferred from this export.",
+      "Updated 1 operations. Existing placements and locks in every scenario were preserved; review conflicts after changed durations, resources or dependencies.",
+      "Imported only the first XLSX worksheet; formulas and error cells are rejected."
+    ],
+    "conflicts": [
+      {
+        "code": "precedence",
+        "message": "WO0003-20: starts 60 seconds before predecessor 'WO0003-10' finishes.",
+        "operation_ids": [
+          "WO0003-10",
+          "WO0003-20"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "unscheduled",
+        "message": "WO0013-30: not scheduled.",
+        "operation_ids": [
+          "WO0013-30"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unscheduled",
+        "message": "WO0013-20: not scheduled.",
+        "operation_ids": [
+          "WO0013-20"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "unscheduled",
+        "message": "WO0013-10: not scheduled.",
+        "operation_ids": [
+          "WO0013-10"
+        ],
+        "severity": "warning"
+      },
+      {
+        "code": "machine_overlap",
+        "message": "WO0003-10 and WO0010-10 overlap on machine 'SAW-1' for 60 seconds.",
+        "operation_ids": [
+          "WO0003-10",
+          "WO0010-10"
+        ],
+        "severity": "error"
+      },
+      {
+        "code": "operator_overlap",
+        "message": "WO0003-10 and WO0010-10 overlap on operator 'Saw crew' for 60 seconds.",
+        "operation_ids": [
+          "WO0003-10",
+          "WO0010-10"
+        ],
+        "severity": "error"
+      }
+    ],
+    "saved_mapping_fields_reused": 10,
+    "unchanged_existing_decisions": 72,
+    "scenarios_checked": 2,
+    "locked_operation": "WO0003-10"
+  },
+  "reviewed_alternative": {
+    "status": "feasible",
+    "objective": 210900.0,
+    "bound": 120601.0,
+    "existing_starts_changed_after_explicit_accept": 32,
+    "locked_start_preserved": true,
+    "independent_oracle": {
+      "valid": true,
+      "operations": 39,
+      "resource_pairs": 234,
+      "precedences": 26
+    }
+  },
+  "invalid_imports_rejected_atomically": [
+    {
+      "fixture": "duplicate.csv",
+      "message": "Row 3: duplicate operation ID 'WO0013-30'"
+    },
+    {
+      "fixture": "corrupt.xlsx",
+      "message": "Could not read corrupt.xlsx: File is not a zip file"
+    }
+  ],
+  "exports": {
+    "csv_bytes": 6047,
+    "printable_html_bytes": 7424
+  },
+  "save_reopen_mapping_and_decisions_preserved": true,
+  "explicit_backup_restore_roundtrip": true
+}

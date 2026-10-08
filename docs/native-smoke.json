@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checks": [
+    "official solver candidate independently validated",
+    "reimport preserves locked start and retains omitted rows",
+    "project save/restart/backup restore round trip",
+    "CSV and printable HTML snapshots",
+    "native widget launch and undo"
+  ],
+  "solver_status": "optimal",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "python": "3.12.13",
+  "seconds": 0.698
+}

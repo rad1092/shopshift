@@ -1,0 +1,31 @@
+{
+  "measured_at_utc": "2026-10-08T01:33:45.150615+00:00",
+  "platform": "macOS-27.0.1-arm64-arm-64bit",
+  "machine": "arm64",
+  "python": "3.12.13",
+  "ortools": "9.15.6755",
+  "upstream_url": "https://raw.githubusercontent.com/google/or-tools/551ad10d94835c99e5e1e684500d3db398c0e345/ortools/sat/samples/minimal_jobshop_sat.py",
+  "upstream_sha256": "8294515355a8dc6929994e4ea08b4fee7b276088917c0f9a6b1b08a409e22f1c",
+  "resource_control": {
+    "workers": 1,
+    "limit_seconds": 10,
+    "random_seed": 0
+  },
+  "fetch_seconds": 0.05771850000019185,
+  "execution_seconds": 0.005261499987682328,
+  "solver": {
+    "status": "OPTIMAL",
+    "solver_wall_seconds": 0.003373,
+    "objective": 11.0,
+    "best_bound": 11.0
+  },
+  "independent_oracle": {
+    "operation_count": 8,
+    "checked_machine_pairs": 7,
+    "checked_precedences": 5,
+    "makespan": 11,
+    "valid": true
+  },
+  "upstream_stdout": "Solution:\nOptimal Schedule Length: 11.0\nMachine 0: job_1_task_0   job_0_task_0   \n           [0,2]          [2,5]          \nMachine 1: job_2_task_0   job_0_task_1   job_1_task_2   \n           [0,4]          [5,7]          [7,11]         \nMachine 2: job_1_task_1   job_2_task_1   job_0_task_2   \n           [2,3]          [4,7]          [7,9]          \n\n\nStatistics\n  - conflicts: 0\n  - branches : 13\n  - wall time: 0.003373s\n",
+  "scope": "Official 8-operation arithmetic example; no calendars, import UI, retained decisions, or human timing."
+}
