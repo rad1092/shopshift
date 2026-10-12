@@ -12,14 +12,27 @@ This is a bounded first release, not a replacement ERP. It is useful when fixed 
 
 Download an archive for your operating system from [Releases](https://github.com/rad1092/shopshift/releases). Extract the whole archive before launching. macOS archives contain `ShopShift.app`; Windows/Linux archives contain a `ShopShift` folder with its executable and supporting libraries. Binaries are unsigned and not notarized. Requirements, verification and library replacement instructions are in [Distribution](docs/DISTRIBUTION.md).
 
-Or install from source with Python 3.12 or 3.13:
+Or install from a source checkout with Python 3.12 or 3.13 (Python 3.14 is not supported). On macOS/Linux:
 
 ```sh
-python -m venv .venv
-# Activate .venv using the command for your operating system.
-python -m pip install .
-shopshift --demo
+git clone https://github.com/rad1092/shopshift.git
+cd shopshift
+python3.12 -m venv .venv
+.venv/bin/python -m pip install .
+.venv/bin/shopshift --demo
 ```
+
+On Windows PowerShell, after cloning and entering the checkout:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install .
+.\.venv\Scripts\shopshift.exe --demo
+```
+
+No shell activation or PowerShell execution-policy change is needed. Substitute
+3.13 if that is your installed supported Python. For a first exercise, follow
+[the demo and daily reimport walkthrough](docs/FIRST-RUN.md).
 
 For reproducible development with [uv](https://docs.astral.sh/uv/):
 
