@@ -4,14 +4,26 @@ Use the release app's synthetic demo or run `shopshift --demo` from your source
 installation. No ERP connection is required. This exercise is for a planner who
 already has an export, fixed resources and explicit working calendars.
 
-1. Request a suggestion in the demo. Inspect the validation results and late
+1. Download the authored [day-one CSV](https://raw.githubusercontent.com/rad1092/shopshift/main/examples/erp_day1.csv)
+   to a practice folder (save the linked file, not the GitHub HTML page).
+   Release archives contain the app; this CSV is a separate download. In the
+   demo, choose **Import ERP export…** and select that file. Map `Operation` to
+   `id`, `Work Order` to `job`, `Work Center` to `machine`, `Assigned To` to
+   `operator`, `Setup Min` to `setup`, `Run Min` to `run`, `After` to
+   `predecessors`, `Ready At` to `release`, `Due At` to `due`, and
+   `Description` to `label`. Choose **minutes** as the duration unit, click **Review import**, then
+   inspect the proposed changes and click **Apply**.
+   These stable operation IDs match the synthetic demo; review the import
+   result and resource calendars before continuing.
+2. Request a suggestion. Inspect the validation results and late
    operations before using the plan. A solver status describes this bounded
    model, not a promise that the real shop can deliver the work.
-2. Select a scheduled operation, record its ID and start, and lock it. Save the
+3. Select a scheduled operation, record its ID and start, and lock it. Save the
    project in a new folder, close it, and reopen the saved `.shopshift` file.
-3. Import the same export again with the same operation IDs. The start and lock
+4. Import that same downloaded day-one CSV again, using the saved mapping and
+   minutes unit. The start and lock
    should survive; omitted rows remain because an export may be partial.
-4. Export a daily CSV and printable HTML, then open both. They are reviewable
+5. Export a daily CSV and printable HTML, then open both. They are reviewable
    work lists; they are not files for writing back into the ERP.
 
 For your own first import, start with a copy containing only a few operations.
