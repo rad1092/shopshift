@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-10-26
 
 - Times on screen read like a shop calendar, *Mon 10/05 08:00* (Korean *10/05 (월) 08:00*); the time zone is shown once in the header. Editing fields still take ISO times with offsets.
 - Lateness, overlaps and early starts are worded in minutes and hours (*finishes 30 min after its due time*, *납기보다 30분 늦게 끝남*) on screen and in validator messages. Issues carry `amount` and `subject` for this; CSV columns stay in seconds.
