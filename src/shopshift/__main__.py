@@ -9,7 +9,7 @@ from pathlib import Path
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ShopShift offline scheduling workbench")
     parser.add_argument("project", nargs="?", help="Project JSON file to open")
-    parser.add_argument("--version", action="version", version="ShopShift 0.1.0")
+    parser.add_argument("--version", action="version", version="ShopShift 0.2.0")
     parser.add_argument("--smoke-test", metavar="DIRECTORY", help="Run packaged GUI smoke and save evidence")
     parser.add_argument("--demo", action="store_true", help="Open the synthetic shop example")
     args = parser.parse_args(argv)

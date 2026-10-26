@@ -70,7 +70,7 @@ def test_real_drag_and_keyboard_equivalent(window, qtbot):
     window.timeline.ensureVisible(bar)
     qtbot.wait(20)
     start = window.timeline.mapFromScene(bar.sceneBoundingRect().center())
-    end = start + QPoint(48, 0)  # One hour at day-detail scale.
+    end = start + QPoint(round(window.timeline.scale_seconds * 3600), 0)  # One hour at day-detail scale.
     QTest.mousePress(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=start)
     QTest.mouseMove(window.timeline.viewport(), end, 40)
     QTest.mouseRelease(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=end)
@@ -255,7 +255,7 @@ def test_korean_filter_late_and_unscheduled_daily(window):
     window.set_placement("WO-401-10", None)
     window.day_filter.setText("2026-10-05")
     window.refresh_daily()
-    assert any(window.daily_table.item(row, 1).text() == "Unscheduled / 미배치" for row in range(window.daily_table.rowCount()))
+    assert any(window.daily_table.item(row, 1).text() == "미배치" for row in range(window.daily_table.rowCount()))
     window.day_filter.setText("bad date")
     window.refresh_daily()
     assert window.daily_error.text()
@@ -299,7 +299,7 @@ def test_clicking_bar_does_not_round_seconds_and_drag_retains_them(window, qtbot
     QTest.mouseClick(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=start)
     qtbot.wait(20)
     assert window.project.scenario.placements[identity].start == original
-    end = start + QPoint(48, 0)
+    end = start + QPoint(round(window.timeline.scale_seconds * 3600), 0)
     QTest.mousePress(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=start)
     QTest.mouseMove(window.timeline.viewport(), end, 40)
     QTest.mouseRelease(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=end)
@@ -328,8 +328,8 @@ def test_imported_constraints_are_inspectable_as_literal_text(window):
     dialog = PlacementDialog(window.project, identity, window)
     details = dialog.findChild(QLabel, "operationDetails")
     assert "WO-401-10" in details.text()
-    assert "2026-10-05T08:00:00-05:00" in details.text()
-    assert "2026-10-05T10:30:00-05:00" in details.text()
+    assert "Release: Mon 10/05 08:00" in details.text()
+    assert "Due: Mon 10/05 10:30" in details.text()
     assert "<b>literal ERP description</b>" in details.text()
     assert details.textFormat() == Qt.TextFormat.PlainText
 
@@ -509,3 +509,53 @@ def test_compact_backup_cannot_restore_an_unsaveable_draft(window, tmp_path, mon
     assert window.project.to_dict() == before
     assert len(window.undo_stack) == history and window.dirty == dirty and window.path == path
     assert "Backup restored" not in window.statusBar().currentMessage()
+
+
+def test_korean_switches_every_visible_text(window):
+    window.language_box.setCurrentIndex(1)
+    try:
+        assert window.menuBar().actions()[0].text() == "파일"
+        assert window.timeline_zoom.itemText(0) == "전체"
+        assert "Not saved" not in window.subtitle.text() and "저장되지 않음" in window.subtitle.text()
+        assert window.metrics.text().startswith("공정 ")
+        assert window.issue_heading.text().startswith("검증 · 충돌 ")
+        lines = [window.issues_list.item(i).text() for i in range(window.issues_list.count())]
+        assert any(line.startswith("경고 · ") and "납기보다" in line for line in lines), lines
+        assert not any("seconds" in line for line in lines)
+        states = [window.operations_table.item(row, 8).text() for row in range(window.operations_table.rowCount())]
+        assert any(state.endswith("지연") for state in states), states
+        start = window.operations_table.item(0, 4).text()
+        assert "T" not in start and "(" in start, start  # 10/05 (월) 08:00, not ISO
+    finally:
+        window.language_box.setCurrentIndex(0)
+    assert window.menuBar().actions()[0].text() == "File"
+    assert window.timeline_zoom.itemText(0) == "Overview"
+
+
+def test_times_and_lateness_read_like_a_planner_would(window):
+    start = window.operations_table.item(0, 4).text()
+    assert start.count(":") == 1 and len(start.split()) == 3 and "-05:00" not in start, start  # Mon 10/05 08:00
+    lines = [window.issues_list.item(i).text() for i in range(window.issues_list.count())]
+    late = [line for line in lines if "after its due time" in line]
+    assert late and all(" min" in line or " h" in line for line in late), late
+    assert not any("seconds" in line for line in lines)
+
+
+def test_late_bars_are_orange_and_the_timeline_starts_at_working_hours(window):
+    project = window.project
+    late = [op_id for op_id, p in project.scenario.placements.items()
+            if project.operations[op_id].due is not None and p.start + project.operations[op_id].duration > project.operations[op_id].due]
+    assert late
+    bar = window.timeline.bars[late[0]]
+    assert bar.brush().color().name() == "#d9822b"
+    first_window = min(w.start for m in project.machines.values() for w in m.windows)
+    assert window.timeline.origin >= project.horizon_start
+    assert window.timeline.origin == max(project.horizon_start, first_window // 3600 * 3600)
+
+
+def test_priority_sliders_reach_the_solver(window):
+    window.weightDue.setValue(10)
+    window.weightFinish.setValue(0)
+    assert window.suggestion_weights() == (10, 0)
+    window.weightDue.setValue(0)
+    assert window.suggestion_weights() == (1, 1)

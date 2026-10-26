@@ -82,7 +82,7 @@ def run_smoke(app, directory: Path) -> int:
         window.timeline.ensureVisible(bar)
         QTest.qWait(30)
         point = window.timeline.mapFromScene(bar.sceneBoundingRect().center())
-        destination = point + QPoint(48, 0)
+        destination = point + QPoint(round(window.timeline.scale_seconds * 3600), 0)  # One hour at this zoom.
         QTest.mousePress(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=point)
         QTest.mouseMove(window.timeline.viewport(), destination, 40)
         QTest.mouseRelease(window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=destination)
