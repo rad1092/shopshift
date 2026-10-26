@@ -4,7 +4,9 @@
 
 ShopShift is a desktop scheduling workbench for one planner at a small shop. Import a daily CSV/XLSX export, preserve manual starts and locks by stable operation ID, see why a plan conflicts, compare a scenario, and print or export a daily work list. The app has no account, server, telemetry, ERP write access or machine control.
 
-![ShopShift native Mac workbench](docs/screenshots/macos-workbench.png)
+![ShopShift with the demo shop: operations table, the day's timeline from 08:00 to 17:00 with a late operation in orange, and lateness warnings in minutes](docs/screenshots/workbench-en.png)
+
+Times read like a shop calendar (*Mon 10/05 08:00*), with the time zone shown once in the header. Lateness is in minutes and hours, late bars are orange, and the day view opens on working hours. Choose **한국어** in the toolbar and the whole window switches to Korean.
 
 This is a bounded first release, not a replacement ERP. It is useful when fixed machines, fixed operators, precedence and explicit calendars describe your planning problem. See [product limits](docs/PRODUCT.md) and the [evidence behind the scope](docs/FIT.md).
 
@@ -49,12 +51,12 @@ uv run pytest
 1. Create a project with a time zone and planning horizon, or open the synthetic demo.
 2. Import the ERP export. Map operation ID, job, machine and run duration; optionally map operator, setup, predecessors, release, due and label. Choose the duration unit.
 3. Review new, changed and retained rows. New resources start with weekday 08:00–12:00 / 13:00–17:00 availability. Edit those calendars to match the shop.
-4. Request a suggestion or place tasks manually. Drag a task or use its edit controls; lock committed starts. Undo is available.
+4. Set the two priorities next to **Suggest schedule**, **Due dates** and **Finish early**, then request a suggestion, or place tasks manually. Drag a task or use its edit controls; lock committed starts. Undo is available.
 5. Review conflicts and late operations. Copy a scenario before exploring alternatives, and compare the resulting times.
 6. Export the selected day's CSV/printable HTML or print the plan, then save the project.
 7. Tomorrow, import the next export using the saved mapping. Existing starts and locks survive in every scenario. Changed durations/resources can create conflicts that need review. Missing rows are retained because an export may be partial.
 
-Suggestions use official OR-Tools CP-SAT, one worker and a time budget. Every candidate is checked again by an independent validator. The objective minimizes total per-operation tardiness plus makespan in seconds, with equal weights. Optimality is only for that model and objective. Status and review are explicit; no result becomes a production commitment automatically.
+Suggestions use official OR-Tools CP-SAT, one worker and a time budget. Every candidate is checked again by an independent validator. The objective minimizes total per-operation tardiness and makespan, weighted by the two priority sliders (equal by default). Optimality is only for that model and objective. Status and review are explicit; no result becomes a production commitment automatically.
 
 ## Boundaries
 

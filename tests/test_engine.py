@@ -308,3 +308,38 @@ def test_moderate_realistic_workload_with_one_worker():
     assert result.status in {"optimal", "feasible"}
     assert_independent_oracle(p, result.placements)
     assert result.wall_time < 5
+
+
+def test_issue_amounts_and_english_units():
+    from shopshift.demo import demo_project
+    from shopshift.validator import validate
+    issues = validate(demo_project())
+    late = [issue for issue in issues if issue.code == "late"]
+    assert late and all(issue.amount and issue.amount > 0 for issue in late)
+    assert all("seconds" not in issue.message for issue in late)
+
+
+def test_human_durations_and_times():
+    from shopshift import i18n
+    i18n.set_language("en")
+    assert i18n.duration(1800) == "30 min"
+    assert i18n.duration(8100) == "2 h 15 min"
+    assert i18n.duration(90061) == "1 day 1 h"
+    assert i18n.when(1791205200, "America/Chicago") == "Mon 10/05 08:00"
+    i18n.set_language("ko")
+    try:
+        assert i18n.duration(1800) == "30분"
+        assert i18n.duration(8100) == "2시간 15분"
+        assert i18n.when(1791205200, "America/Chicago") == "10/05 (월) 08:00"
+    finally:
+        i18n.set_language("en")
+
+
+def test_solver_weights_change_priorities_and_are_validated():
+    from shopshift.demo import demo_project
+    from shopshift.solver import suggest
+    project = demo_project()
+    assert suggest(project, time_limit=1.0, lateness_weight=0, makespan_weight=0).status == "invalid"
+    assert suggest(project, time_limit=1.0, lateness_weight=11).status == "invalid"
+    result = suggest(project, time_limit=3.0, lateness_weight=10, makespan_weight=1)
+    assert result.status in ("optimal", "feasible")

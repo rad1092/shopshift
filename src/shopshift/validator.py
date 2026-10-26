@@ -20,6 +20,22 @@ class Issue:
     message: str
     operation_ids: tuple[str, ...] = ()
     severity: str = "error"
+    # Seconds behind the message (lateness, overlap, early start), so the
+    # interface can word it in the planner's language and units.
+    amount: int | None = None
+    # The resource an overlap or calendar issue is about.
+    subject: str = ""
+
+
+def _span(seconds: int) -> str:
+    """English wording of a length of time for messages: 30 min, 2 h 15 min."""
+    seconds = abs(int(seconds))
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    parts = [f"{days} day{'s' if days != 1 else ''}" if days else "", f"{hours} h" if hours else "",
+             f"{minutes} min" if minutes else "", f"{secs} s" if secs else ""]
+    return " ".join([p for p in parts if p][:2]) or "0 min"
 
 
 def _timestamp(value: object) -> bool:
@@ -52,8 +68,9 @@ def validate(project: Project, scenario: Scenario | None = None) -> list[Issue]:
     """
     issues: list[Issue] = []
 
-    def report(code: str, message: str, *ids: str, severity: str = "error") -> None:
-        issues.append(Issue(code, message, tuple(ids), severity))
+    def report(code: str, message: str, *ids: str, severity: str = "error",
+               amount: int | None = None, subject: str = "") -> None:
+        issues.append(Issue(code, message, tuple(ids), severity, amount, subject))
 
     if not isinstance(project, Project):
         return [Issue("invalid_project", "Expected a Project instance.")]
@@ -198,15 +215,18 @@ def validate(project: Project, scenario: Scenario | None = None) -> list[Issue]:
         if valid_horizon and (start < project.horizon_start or end > project.horizon_end):
             report("outside_horizon", f"{key}: [{start}, {end}) is outside the planning horizon.", key)
         if _timestamp(operation.release) and start < operation.release:
-            report("before_release", f"{key}: starts {operation.release - start} seconds before release.", key)
+            report("before_release", f"{key}: starts {_span(operation.release - start)} before release.", key,
+                   amount=operation.release - start)
         if _timestamp(operation.due) and end > operation.due:
-            report("late", f"{key}: completes {end - operation.due} seconds after its due time.", key, severity="warning")
+            report("late", f"{key}: finishes {_span(end - operation.due)} after its due time.", key, severity="warning",
+                   amount=end - operation.due)
         for kind, resource_id in (("machine", operation.machine), ("operator", operation.operator)):
             if not isinstance(resource_id, str) or not resource_id or resource_id not in resource_ids[kind]:
                 continue
             resource_work.setdefault((kind, resource_id), []).append((start, end, key))
             if not _covered(start, end, calendars.get((kind, resource_id), [])):
-                report(f"{kind}_calendar", f"{key}: [{start}, {end}) crosses unavailable time on {kind} {resource_id!r}.", key)
+                report(f"{kind}_calendar", f"{key}: [{start}, {end}) crosses unavailable time on {kind} {resource_id!r}.", key,
+                       subject=resource_id)
     for key in operations:
         if key not in scenario.placements:
             report("unscheduled", f"{key}: not scheduled.", key, severity="warning")
@@ -219,15 +239,17 @@ def validate(project: Project, scenario: Scenario | None = None) -> list[Issue]:
                 report("unscheduled_predecessor", f"{key}: cannot verify precedence until {predecessor!r} is scheduled.",
                        key, predecessor)
             elif intervals[predecessor][1] > intervals[key][0]:
-                report("precedence", f"{key}: starts {intervals[predecessor][1] - intervals[key][0]} seconds before "
-                       f"predecessor {predecessor!r} finishes.", predecessor, key)
+                report("precedence", f"{key}: starts {_span(intervals[predecessor][1] - intervals[key][0])} before "
+                       f"predecessor {predecessor!r} finishes.", predecessor, key,
+                       amount=intervals[predecessor][1] - intervals[key][0])
 
     for (kind, resource_id), work in resource_work.items():
         latest: tuple[int, int, str] | None = None
         for interval in sorted(work):
             if latest is not None and interval[0] < latest[1]:
                 report(f"{kind}_overlap", f"{latest[2]} and {interval[2]} overlap on {kind} {resource_id!r} "
-                       f"for {min(latest[1], interval[1]) - interval[0]} seconds.", latest[2], interval[2])
+                       f"for {_span(min(latest[1], interval[1]) - interval[0])}.", latest[2], interval[2],
+                       amount=min(latest[1], interval[1]) - interval[0], subject=resource_id)
             if latest is None or interval[1] > latest[1]:
                 latest = interval
     return issues

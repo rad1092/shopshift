@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, QThread, Signal
+from PySide6.QtCore import QEvent, QLocale, QObject, QPointF, QRectF, Qt, QThread, Signal
 from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPalette, QPen, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -46,6 +47,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import i18n
+from .i18n import T
 from .model import Operation, Placement, Project, Resource, Scenario, Window
 from .storage import StorageProblem, validate_project_for_storage
 from .timeutil import day_bounds, format_timestamp, parse_timestamp, working_windows
@@ -56,8 +59,8 @@ TEXT = {
     "open": ("Open…", "열기…"), "save": ("Save", "저장"),
     "save_as": ("Save as…", "다른 이름으로 저장…"), "import": ("Import ERP export…", "ERP 파일 가져오기…"),
     "undo": ("Undo", "실행 취소"), "backup": ("Create backup…", "백업 만들기…"),
-    "restore": ("Restore backup…", "백업 복원…"), "settings": ("Project & dates…", "프로젝트 및 날짜…"),
-    "schedule": ("Schedule", "일정"), "resources": ("Resources & calendars", "자원 및 근무 시간"),
+    "restore": ("Restore backup…", "백업 복원…"), "settings": ("Project and dates…", "프로젝트 및 날짜…"),
+    "schedule": ("Schedule", "일정"), "resources": ("Resources and calendars", "자원 및 근무 시간"),
     "scenarios": ("Scenarios", "시나리오"), "daily": ("Daily work lists", "일일 작업 목록"),
     "suggest": ("Suggest schedule…", "일정 제안…"), "edit": ("Edit start / lock…", "시작 시간 / 고정 편집…"),
     "lock": ("Toggle lock", "고정 전환"), "unschedule": ("Clear placement", "배치 해제"),
@@ -110,12 +113,18 @@ def _put_row(table: QTableWidget, row: int, values: list[str], key: str = "") ->
 
 
 def _duration(seconds: int) -> str:
-    return f"{seconds / 60:g} min"
+    return i18n.duration(seconds)
 
 
 def _time(value: int | None, project: Project) -> str:
+    """A time to read: Mon 10/05 08:00. The project's zone is shown once in the header."""
+    return i18n.when(value, project.timezone)
+
+
+def _iso(value: int | None, project: Project) -> str:
+    """A time to edit: full ISO with offset, which parse_timestamp reads back exactly."""
     if value is None:
-        return "—"
+        return ""
     try:
         return format_timestamp(value, project.timezone)
     except (ValueError, OverflowError, OSError, KeyError):
@@ -123,7 +132,7 @@ def _time(value: int | None, project: Project) -> str:
 
 
 def _issues_text(issues) -> str:
-    return "\n".join(f"{issue.severity.upper()} · {issue.code}: {issue.message}" for issue in issues)
+    return "\n".join(i18n.issue_line(issue) for issue in issues)
 
 
 def _configure_appearance() -> None:
@@ -147,6 +156,10 @@ def _configure_appearance() -> None:
     app.setPalette(palette)
 
 
+_FIELD_NAMES_KO = {"id": "공정 ID", "job": "작업", "machine": "기계", "operator": "작업자", "setup": "준비 시간",
+                   "run": "실행 시간", "predecessors": "선행 공정", "release": "작업 가능 시각", "due": "납기", "label": "설명"}
+
+
 class MappingDialog(QDialog):
     """Explicit mapping with a bounded raw-data preview; never mutates Project."""
 
@@ -155,14 +168,15 @@ class MappingDialog(QDialog):
     def __init__(self, project: Project, path: str | Path, parent=None):
         super().__init__(parent)
         from .importing import read_table
-        self.setWindowTitle("Map ERP export columns / ERP 열 매핑")
+        self.setWindowTitle(T("Map ERP export columns", "ERP 열 매핑"))
         self.resize(950, 720)
         self.path = Path(path)
         headers, rows = read_table(path)
         saved = project.mappings.get(self.path.name, project.mappings.get("__last__"))
         outer = QVBoxLayout(self)
-        outer.addWidget(_label(f"{self.path.name} · {len(rows):,} rows · {project.timezone}", "font-weight: 600; font-size: 16px;"))
-        outer.addWidget(_label("Required: stable operation ID, job, machine and run time. Dates require an ISO timestamp; include an offset for repeated DST times. Optional unmapped fields keep existing values. / 필수: 공정 ID, 작업, 기계, 실행 시간. 날짜는 ISO 형식입니다."))
+        outer.addWidget(_label(T(f"{self.path.name} · {len(rows):,} rows · {project.timezone}", f"{self.path.name} · {len(rows):,}행 · {project.timezone}"), "font-weight: 600; font-size: 16px;"))
+        outer.addWidget(_label(T("Required: stable operation ID, job, machine and run time. Dates require an ISO timestamp; include an offset for repeated DST times. Optional unmapped fields keep existing values.",
+                                 "필수: 공정 ID, 작업, 기계, 실행 시간. 날짜는 ISO 형식(예: 2026-10-05T08:00)이며, 서머타임으로 반복되는 시각에는 오프셋을 붙이세요. 매핑하지 않은 선택 항목은 기존 값을 유지합니다.")))
         fields = QWidget()
         form = QFormLayout(fields)
         self.combos: dict[str, QComboBox] = {}
@@ -177,7 +191,7 @@ class MappingDialog(QDialog):
         for field in self.FIELDS:
             combo = QComboBox()
             combo.setObjectName(f"mapping_{field}")
-            combo.addItem("— Not mapped / 매핑 없음 —", "")
+            combo.addItem(T("— Not mapped —", "— 매핑 없음 —"), "")
             for header in headers:
                 combo.addItem(header, header)
             # An omitted field in a saved mapping is an intentional decision to
@@ -187,13 +201,13 @@ class MappingDialog(QDialog):
                         else next((normalized[a] for a in aliases[field] if a in normalized), ""))
             combo.setCurrentIndex(max(0, combo.findData(selected)))
             required = " *" if field in ("id", "job", "machine", "run") else ""
-            form.addRow(field + required, combo)
+            form.addRow(T(field, _FIELD_NAMES_KO.get(field, field)) + required, combo)
             self.combos[field] = combo
         self.unit = QComboBox()
         self.unit.setObjectName("durationUnit")
         self.unit.addItems(["seconds", "minutes", "hours"])
         self.unit.setCurrentText((saved or {}).get("__duration_unit", "minutes"))
-        form.addRow("Setup & run units / 시간 단위", self.unit)
+        form.addRow(T("Setup & run units", "준비·실행 시간 단위"), self.unit)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(fields)
@@ -201,12 +215,12 @@ class MappingDialog(QDialog):
         preview = _table(headers, "importPreview")
         for i, row in enumerate(rows[:12]):
             _put_row(preview, i, [row.get(header, "") for header in headers])
-        outer.addWidget(_label("Source preview · first 12 rows / 원본 미리보기"))
+        outer.addWidget(_label(T("Source preview · first 12 rows", "원본 미리보기 · 처음 12행")))
         outer.addWidget(preview, 1)
         self.error = _label("", "color:#a33a2a;")
         outer.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Review import / 가져오기 검토")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(T("Review import", "가져오기 검토"))
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
@@ -218,11 +232,11 @@ class MappingDialog(QDialog):
     def _accept(self):
         missing = [key for key in ("id", "job", "machine", "run") if key not in self.mapping]
         if missing:
-            self.error.setText("Map required columns: " + ", ".join(missing))
+            self.error.setText(T("Map required columns: ", "필수 열을 매핑하세요: ") + ", ".join(missing))
             return
         mapped = list(self.mapping.values())
         if len(mapped) != len(set(mapped)):
-            self.error.setText("Each source column can be assigned once. / 원본 열을 중복 지정할 수 없습니다.")
+            self.error.setText(T("Each source column can be assigned once.", "원본 열을 중복 지정할 수 없습니다."))
             return
         self.accept()
 
@@ -237,11 +251,11 @@ class ReviewDialog(QDialog):
         body = QPlainTextEdit(details)
         body.setReadOnly(True)
         body.setObjectName("reviewDetails")
-        body.setAccessibleName("Changes and validation details")
+        body.setAccessibleName(T("Changes and validation details", "변경 및 검증 내용"))
         layout.addWidget(body)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
         apply = buttons.button(QDialogButtonBox.StandardButton.Apply)
-        apply.setText("Apply / 적용")
+        apply.setText(T("Apply", "적용"))
         apply.setEnabled(can_apply)
         apply.clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -256,30 +270,31 @@ class PlacementDialog(QDialog):
         self.result_placement: Placement | None = None
         op = project.operations[operation_id]
         placement = project.scenario.placements.get(operation_id)
-        self.setWindowTitle(f"Edit {operation_id} / 공정 편집")
+        self.setWindowTitle(T(f"Edit {operation_id}", f"{operation_id} 편집"))
         self.resize(630, 300)
         layout = QVBoxLayout(self)
         layout.addWidget(_label(f"{op.job} · {op.machine} · {_duration(op.duration)}", "font-weight:600;"))
-        details = _label(f"Description / 설명: {op.label or '—'}\n"
-                         f"Operator / 작업자: {op.operator or '—'}\n"
-                         f"Predecessors / 선행 공정: {'; '.join(op.predecessors) or '—'}\n"
-                         f"Release / 작업 가능 시각: {_time(op.release, project)}\n"
-                         f"Due / 납기: {_time(op.due, project)}")
+        details = _label(f"{T('Description', '설명')}: {op.label or '—'}\n"
+                         f"{T('Operator', '작업자')}: {op.operator or '—'}\n"
+                         f"{T('Predecessors', '선행 공정')}: {'; '.join(op.predecessors) or '—'}\n"
+                         f"{T('Release', '작업 가능 시각')}: {_time(op.release, project)}\n"
+                         f"{T('Due', '납기')}: {_time(op.due, project)}")
         details.setObjectName("operationDetails")
-        details.setAccessibleName("Imported operation details / 가져온 공정 정보")
+        details.setAccessibleName(T("Imported operation details", "가져온 공정 정보"))
         details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
                                        | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         layout.addWidget(details)
-        layout.addWidget(_label(f"Display zone: {project.timezone}. ISO timestamp with offset is safest. Leave start empty to clear placement. / 시작 시간이 없으면 배치를 해제합니다."))
+        layout.addWidget(_label(T(f"Times are in {project.timezone}. Enter the start as 2026-10-05T08:00; add an offset such as -05:00 for a repeated daylight-saving hour. Leave it empty to clear the placement.",
+                                  f"시간대는 {project.timezone}입니다. 시작을 2026-10-05T08:00 형식으로 입력하세요. 서머타임으로 반복되는 시각에는 -05:00 같은 오프셋을 붙입니다. 비우면 배치를 해제합니다.")))
         form = QFormLayout()
-        self.start = QLineEdit(_time(placement.start, project) if placement else "")
+        self.start = QLineEdit(_iso(placement.start, project) if placement else "")
         self.start.setObjectName("placementStart")
         self.start.setPlaceholderText("2026-10-08T08:00:00+09:00")
-        form.addRow("Start / 시작", self.start)
-        self.locked = QCheckBox("Keep this placement fixed during suggestions / 일정 제안 시 고정")
+        form.addRow(T("Start", "시작"), self.start)
+        self.locked = QCheckBox(T("Keep this placement fixed during suggestions", "일정 제안 때 이 배치를 고정"))
         self.locked.setObjectName("placementLocked")
         self.locked.setChecked(placement.locked if placement else False)
-        form.addRow("Lock / 고정", self.locked)
+        form.addRow(T("Lock", "고정"), self.locked)
         layout.addLayout(form)
         self.error = _label("", "color:#a33a2a;")
         layout.addWidget(self.error)
@@ -292,7 +307,7 @@ class PlacementDialog(QDialog):
         value = self.start.text().strip()
         if not value:
             if self.locked.isChecked():
-                self.error.setText("A locked operation needs a start time. / 고정하려면 시작 시간이 필요합니다.")
+                self.error.setText(T("A locked operation needs a start time.", "고정하려면 시작 시간이 필요합니다."))
                 return
             self.result_placement = None
         else:
@@ -310,17 +325,18 @@ class CalendarDialog(QDialog):
         self.project = project
         self.resource = resource
         self.windows: list[Window] = []
-        self.setWindowTitle(f"Calendar · {resource.id}")
+        self.setWindowTitle(T(f"Calendar · {resource.id}", f"근무 시간 · {resource.id}"))
         self.resize(790, 570)
         layout = QVBoxLayout(self)
         layout.addWidget(_label(f"{resource.id} · {project.timezone}", "font-size:17px;font-weight:600;"))
-        layout.addWidget(_label("One available interval per line: START / END. Use ISO dates with offsets for DST ambiguity. Gaps mean unavailable; work must fit entirely inside a window. Overnight windows are supported. / 한 줄에 시작 / 종료를 입력합니다. 빈 구간은 작업 불가 시간입니다."))
+        layout.addWidget(_label(T("One available interval per line: START / END. Use ISO dates with offsets for DST ambiguity. Gaps mean unavailable; work must fit entirely inside a window. Overnight windows are supported.",
+                                  "한 줄에 근무 구간 하나를 시작 / 종료로 입력합니다. 서머타임으로 모호한 시각에는 오프셋을 붙이세요. 빈 구간은 작업 불가 시간이고, 작업은 한 구간 안에 다 들어가야 합니다. 밤샘 구간도 됩니다.")))
         self.editor = QPlainTextEdit()
         self.editor.setObjectName("calendarWindows")
-        self.editor.setAccessibleName("Available resource windows, one start slash end per line")
-        self.editor.setPlainText("\n".join(f"{_time(w.start, project)} / {_time(w.end, project)}" for w in resource.windows))
+        self.editor.setAccessibleName(T("Available resource windows, one start slash end per line", "근무 구간, 한 줄에 시작 / 종료"))
+        self.editor.setPlainText("\n".join(f"{_iso(w.start, project)} / {_iso(w.end, project)}" for w in resource.windows))
         layout.addWidget(self.editor)
-        default = QPushButton("Replace with weekdays 08–12 / 13–17 / 평일 기본 근무")
+        default = QPushButton(T("Replace with weekdays 08–12 and 13–17", "평일 08–12, 13–17로 바꾸기"))
         default.clicked.connect(self._defaults)
         layout.addWidget(default)
         self.error = _label("", "color:#a33a2a;")
@@ -333,7 +349,7 @@ class CalendarDialog(QDialog):
     def _defaults(self):
         try:
             windows = working_windows(self.project.horizon_start, self.project.horizon_end, self.project.timezone)
-            self.editor.setPlainText("\n".join(f"{_time(w.start, self.project)} / {_time(w.end, self.project)}" for w in windows))
+            self.editor.setPlainText("\n".join(f"{_iso(w.start, self.project)} / {_iso(w.end, self.project)}" for w in windows))
             self.error.clear()
         except (ValueError, OverflowError, OSError, KeyError) as exc:
             self.error.setText(str(exc))
@@ -346,14 +362,14 @@ class CalendarDialog(QDialog):
                     continue
                 parts = line.split("/")
                 if len(parts) != 2:
-                    raise ValueError(f"Line {number}: enter START / END.")
+                    raise ValueError(T(f"Line {number}: enter START / END.", f"{number}행: 시작 / 종료를 입력하세요."))
                 start, end = (parse_timestamp(part.strip(), self.project.timezone) for part in parts)
                 if end <= start:
-                    raise ValueError(f"Line {number}: end must be after start.")
+                    raise ValueError(T(f"Line {number}: end must be after start.", f"{number}행: 종료가 시작보다 뒤여야 합니다."))
                 windows.append(Window(start, end))
             windows.sort(key=lambda item: item.start)
             if any(a.end > b.start for a, b in zip(windows, windows[1:])):
-                raise ValueError("Available windows overlap. Merge or separate them.")
+                raise ValueError(T("Available windows overlap. Merge or separate them.", "근무 구간이 겹칩니다. 합치거나 나누세요."))
         except (ValueError, TypeError, OverflowError) as exc:
             self.error.setText(str(exc))
             return
@@ -366,19 +382,20 @@ class ProjectDialog(QDialog):
         super().__init__(parent)
         self.project = project
         self.values = None
-        self.setWindowTitle("Project & horizon / 프로젝트 및 계획 기간")
+        self.setWindowTitle(T("Project & horizon", "프로젝트 및 계획 기간"))
         self.resize(610, 300)
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.name = QLineEdit(project.name)
         self.zone = QLineEdit(project.timezone)
-        self.begin = QLineEdit(_time(project.horizon_start, project))
-        self.end = QLineEdit(_time(project.horizon_end, project))
-        for label, widget in (("Name / 이름", self.name), ("IANA timezone / 시간대", self.zone),
-                              ("Horizon start / 기간 시작", self.begin), ("Horizon end / 기간 종료", self.end)):
+        self.begin = QLineEdit(_iso(project.horizon_start, project))
+        self.end = QLineEdit(_iso(project.horizon_end, project))
+        for label, widget in ((T("Name", "이름"), self.name), (T("IANA timezone", "시간대 (IANA)"), self.zone),
+                              (T("Horizon start", "기간 시작"), self.begin), (T("Horizon end", "기간 종료"), self.end)):
             form.addRow(label, widget)
         layout.addLayout(form)
-        layout.addWidget(_label("Changing the horizon or display zone keeps all existing timestamps and calendars. Review any conflicts afterward. / 기존 일정과 자원 근무 시간은 유지됩니다."))
+        layout.addWidget(_label(T("Changing the horizon or display zone keeps all existing timestamps and calendars. Review any conflicts afterward.",
+                                  "기간이나 시간대를 바꿔도 기존 일정과 근무 시간은 그대로입니다. 바꾼 다음 충돌을 확인하세요.")))
         self.error = _label("", "color:#a33a2a;")
         layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -392,9 +409,9 @@ class ProjectDialog(QDialog):
             ZoneInfo(zone)
             start, end = parse_timestamp(self.begin.text(), zone), parse_timestamp(self.end.text(), zone)
             if end <= start:
-                raise ValueError("Horizon end must be after its start.")
+                raise ValueError(T("Horizon end must be after its start.", "기간 종료가 시작보다 뒤여야 합니다."))
             if not self.name.text().strip():
-                raise ValueError("Give the project a name.")
+                raise ValueError(T("Give the project a name.", "프로젝트 이름을 입력하세요."))
             self.values = (self.name.text().strip(), zone, start, end)
         except (ValueError, KeyError, TypeError, OverflowError) as exc:
             self.error.setText(str(exc))
@@ -403,7 +420,8 @@ class ProjectDialog(QDialog):
 
 
 class _OperationBar(QGraphicsRectItem):
-    def __init__(self, timeline: "TimelineView", operation: Operation, placement: Placement, row: int, invalid: bool):
+    def __init__(self, timeline: "TimelineView", operation: Operation, placement: Placement, row: int, invalid: bool,
+                 late: bool = False):
         width = max(7.0, operation.duration * timeline.scale_seconds)
         super().__init__(0, 0, width, 28)
         self.timeline = timeline
@@ -416,9 +434,16 @@ class _OperationBar(QGraphicsRectItem):
         self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable, not self.locked)
         self.setFlag(QGraphicsRectItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setCursor(Qt.CursorShape.ArrowCursor if self.locked else Qt.CursorShape.OpenHandCursor)
-        self.setBrush(QColor("#aa443c" if invalid else "#506078" if self.locked else "#187b80"))
+        # Red: a conflict. Orange: finishes after its due time. Gray: locked.
+        self.late = late
+        self.setBrush(QColor("#aa443c" if invalid else "#d9822b" if late else "#506078" if self.locked else "#187b80"))
         self.setPen(QPen(QColor("#ffffff"), 1))
-        self.setToolTip(f"{operation.id} · {operation.job}\n{_time(placement.start, timeline.project)}\n{_duration(operation.duration)}{' · LOCKED' if self.locked else ''}\nDouble-click / Enter to edit")
+        overdue = ""
+        if late and operation.due is not None:
+            overdue = "\n" + T(f"{_duration(placement.start + operation.duration - operation.due)} late", f"납기보다 {_duration(placement.start + operation.duration - operation.due)} 늦음")
+        locked = (" · " + T("locked", "고정")) if self.locked else ""
+        self.setToolTip(f"{operation.id} · {operation.job}\n{_time(placement.start, timeline.project)} – {_time(placement.start + operation.duration, timeline.project)}"
+                        f"\n{_duration(operation.duration)}{locked}{overdue}\n{T('Double-click or Enter to edit', '더블클릭 또는 Enter로 편집')}")
         self.label = QGraphicsSimpleTextItem(("🔒 " if self.locked else "") + operation.id, self)
         self.label.setBrush(QColor("white"))
         self.label.setPos(5, 5)
@@ -458,7 +483,7 @@ class TimelineView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("scheduleTimeline")
-        self.setAccessibleName("Machine schedule timeline. Use the operations table for keyboard editing.")
+        self.setAccessibleName(T("Machine schedule timeline. Use the operations table for keyboard editing.", "기계별 일정 타임라인. 키보드로 편집하려면 공정 표를 쓰세요."))
         self.setScene(QGraphicsScene(self))
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setMinimumHeight(240)
@@ -467,6 +492,7 @@ class TimelineView(QGraphicsView):
         self.zoom_mode = "overview"
         self.origin = 0
         self.project = None
+        self.end = 0
         self.bars: dict[str, _OperationBar] = {}
         self.scene().selectionChanged.connect(self._selection)
 
@@ -481,14 +507,26 @@ class TimelineView(QGraphicsView):
         self.scene().blockSignals(True)
         self.scene().clear()
         self.bars = {}
-        self.origin = project.horizon_start
-        span = max(3600, project.horizon_end - project.horizon_start)
+        machines = sorted(set(project.machines) | {op.machine for op in project.operations.values()})
+        # Show the hours that matter: from the first working window or placement
+        # to the last, on whole hours, instead of the full horizon from midnight.
+        spans = [(w.start, w.end) for m in machines if m in project.machines for w in project.machines[m].windows]
+        spans += [(p.start, p.start + project.operations[k].duration) for k, p in project.scenario.placements.items()
+                  if k in project.operations]
+        first, last = project.horizon_start, project.horizon_end
+        if spans:
+            first = max(first, min(a for a, _ in spans) // 3600 * 3600)
+            last = min(last, -(-max(b for _, b in spans) // 3600) * 3600)
+        if last - first < 3600:
+            first, last = project.horizon_start, project.horizon_end
+        self.origin = first
+        self.end = last
+        span = max(3600, last - first)
         # One day remains useful at a glance; long horizons scroll instead of
         # drawing millions of unbounded tick marks.
-        self.scale_seconds = {"day": 48 / 3600, "hour": 180 / 3600}.get(
+        self.scale_seconds = {"day": self._working_day_scale(project, spans), "hour": 180 / 3600}.get(
             self.zoom_mode, max(1 / 1200, min(1 / 45, 1350 / span)))
         width = max(900, span * self.scale_seconds)
-        machines = sorted(set(project.machines) | {op.machine for op in project.operations.values()})
         invalid = {op_id for issue in issues if issue.severity == "error" for op_id in issue.operation_ids}
         for row, machine in enumerate(machines):
             y = self.top + row * self.row_height
@@ -498,7 +536,7 @@ class TimelineView(QGraphicsView):
             text.setPos(8, y + 14)
             resource = project.machines.get(machine)
             for window in resource.windows if resource else []:
-                start, end = max(window.start, self.origin), min(window.end, project.horizon_end)
+                start, end = max(window.start, self.origin), min(window.end, self.end)
                 if end > start:
                     self.scene().addRect(self.left + (start - self.origin) * self.scale_seconds, y + 1,
                                          (end - start) * self.scale_seconds, self.row_height - 2,
@@ -506,7 +544,7 @@ class TimelineView(QGraphicsView):
         tick = 3600 if self.zoom_mode in ("day", "hour") or span <= 36 * 3600 else 86400
         tick = max(tick, math.ceil(span / 100) // 3600 * 3600)
         timestamp = self.origin
-        while timestamp <= project.horizon_end:
+        while timestamp <= self.end:
             x = self.left + (timestamp - self.origin) * self.scale_seconds
             self.scene().addLine(x, self.top - 4, x, self.top + len(machines) * self.row_height, QPen(QColor("#d9e3e8")))
             try:
@@ -522,13 +560,30 @@ class TimelineView(QGraphicsView):
             op = project.operations.get(op_id)
             if op is None or (visible_ids is not None and op_id not in visible_ids):
                 continue
-            bar = _OperationBar(self, op, placement, rows[op.machine], op_id in invalid)
+            late = op.due is not None and placement.start + op.duration > op.due
+            bar = _OperationBar(self, op, placement, rows[op.machine], op_id in invalid, late)
             self.scene().addItem(bar)
             self.bars[op_id] = bar
         if not machines:
-            self.scene().addText("Import an ERP export or open the demo to begin. / ERP 파일을 가져오거나 예제를 여세요.").setPos(25, 90)
+            self.scene().addText(T("Import an ERP export or open the demo to begin.", "ERP 파일을 가져오거나 예제를 열어 시작하세요.")).setPos(25, 90)
         self.scene().setSceneRect(QRectF(0, 0, self.left + width + 60, max(180, self.top + len(machines) * self.row_height)))
         self.scene().blockSignals(False)
+
+    def _working_day_scale(self, project: Project, spans) -> float:
+        """Day detail fits the first working day (08:00–17:00 in the demo) to the visible width."""
+        if not spans:
+            return 48 / 3600
+        try:
+            zone = ZoneInfo(project.timezone)
+            first = min(a for a, _ in spans)
+            day = datetime.fromtimestamp(first, zone).date()
+            same_day = [(a, b) for a, b in spans if datetime.fromtimestamp(a, zone).date() == day]
+            length = max(b for _, b in same_day) - first
+        except (ValueError, OverflowError, OSError, KeyError):
+            return 48 / 3600
+        length = min(max(length, 4 * 3600), 16 * 3600)
+        visible = max(600, self.viewport().width() - self.left - 30)
+        return max(48 / 3600, visible / length)
 
     def select_operation(self, op_id: str):
         self.scene().blockSignals(True)
@@ -552,14 +607,15 @@ class _SolverWorker(QObject):
     failed = Signal(str)
     finished = Signal()
 
-    def __init__(self, project: Project, time_limit: float):
+    def __init__(self, project: Project, time_limit: float, weights: tuple[int, int] = (1, 1)):
         super().__init__()
-        self.project, self.time_limit = project, time_limit
+        self.project, self.time_limit, self.weights = project, time_limit, weights
 
     def run(self):
         try:
             from .solver import suggest
-            self.result.emit(suggest(self.project, time_limit=self.time_limit))
+            self.result.emit(suggest(self.project, time_limit=self.time_limit,
+                                     lateness_weight=self.weights[0], makespan_weight=self.weights[1]))
         except Exception as exc:  # noqa: BLE001 - report numerical engine failures at the UI boundary.
             self.failed.emit(f"{type(exc).__name__}: {exc}")
         finally:
@@ -578,8 +634,11 @@ class MainWindow(QMainWindow):
         self.path: Path | None = None
         self.dirty = False
         self.language = "en"
+        i18n.set_language("en")
         self.undo_stack: list[tuple[Project, str]] = []
         self._translations = []
+        # (setter, English, Korean): every fixed text, re-set when the language changes.
+        self._texts: list[tuple] = []
         self._refreshing = False
         self._solver_thread: QThread | None = None
         self._solver_worker = None
@@ -592,6 +651,8 @@ class MainWindow(QMainWindow):
         self._build_actions()
         self._build_main()
         self.refresh()
+        if QLocale.system().language() == QLocale.Language.Korean:
+            self.language_box.setCurrentIndex(1)
 
     @staticmethod
     def blank_project() -> Project:
@@ -601,6 +662,16 @@ class MainWindow(QMainWindow):
 
     def _tr(self, key: str) -> str:
         return TEXT[key][self.language == "ko"]
+
+    def _bind(self, setter, english: str, korean: str) -> None:
+        """Set a fixed text now and again whenever the language changes."""
+        setter(T(english, korean))
+        self._texts.append((setter, english, korean))
+
+    def _fixed_label(self, english: str, korean: str, style: str = "") -> QLabel:
+        label = _label("", style)
+        self._bind(label.setText, english, korean)
+        return label
 
     def _button(self, key: str, callback, name: str = "") -> QPushButton:
         button = QPushButton(self._tr(key))
@@ -614,8 +685,10 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Project actions")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
-        file_menu = self.menuBar().addMenu("File / 파일")
-        edit_menu = self.menuBar().addMenu("Edit / 편집")
+        file_menu = self.menuBar().addMenu("")
+        self._bind(file_menu.setTitle, "File", "파일")
+        edit_menu = self.menuBar().addMenu("")
+        self._bind(edit_menu.setTitle, "Edit", "편집")
         definitions = [
             ("new", self.new_project, QKeySequence.StandardKey.New),
             ("demo", self.load_demo, None), ("open", self.open_project, QKeySequence.StandardKey.Open),
@@ -642,13 +715,15 @@ class MainWindow(QMainWindow):
         self.language_box = QComboBox()
         self.language_box.setObjectName("languageSelector")
         self.language_box.setMinimumWidth(110)
-        self.language_box.setAccessibleName("Interface language / 인터페이스 언어")
+        self.language_box.setAccessibleName("Interface language · 인터페이스 언어")
         self.language_box.addItem("English", "en")
         self.language_box.addItem("한국어", "ko")
         self.language_box.currentIndexChanged.connect(self._language_changed)
         toolbar.addWidget(self.language_box)
-        help_menu = self.menuBar().addMenu("Help / 도움말")
-        about_action = QAction("About & licenses / 정보 및 라이선스", self)
+        help_menu = self.menuBar().addMenu("")
+        self._bind(help_menu.setTitle, "Help", "도움말")
+        about_action = QAction("", self)
+        self._bind(about_action.setText, "About & licenses", "정보 및 라이선스")
         about_action.triggered.connect(self.about)
         help_menu.addAction(about_action)
 
@@ -675,7 +750,8 @@ class MainWindow(QMainWindow):
         self._build_scenarios()
         self._build_daily()
         self.setCentralWidget(central)
-        self.statusBar().showMessage("Local project · no network · review before committing to production / 오프라인 단일 계획자")
+        self._bind(self.statusBar().showMessage, "Local project · no network · review before committing to production",
+                   "로컬 프로젝트 · 네트워크 없음 · 생산 지시 전에 검토하세요")
 
     def _build_schedule(self):
         page = QWidget()
@@ -694,9 +770,28 @@ class MainWindow(QMainWindow):
         top.addWidget(self.late_only)
         self.scenario_selector = QComboBox()
         self.scenario_selector.setObjectName("activeScenario")
-        self.scenario_selector.setAccessibleName("Active scenario / 현재 시나리오")
+        self._bind(self.scenario_selector.setAccessibleName, "Active scenario", "현재 시나리오")
         self.scenario_selector.currentTextChanged.connect(self.switch_scenario)
         top.addWidget(self.scenario_selector)
+        # What the suggestion should care about most; read when Suggest is pressed.
+        self.weight_labels = []
+        for name, english, korean, tip_en, tip_ko in (
+                ("weightDue", "Due dates", "납기", "How much finishing each operation by its due time matters.", "공정을 납기 안에 끝내는 것이 얼마나 중요한지"),
+                ("weightFinish", "Finish early", "빨리 끝내기", "How much finishing all work as early as possible matters.", "모든 작업을 최대한 일찍 끝내는 것이 얼마나 중요한지")):
+            label = QLabel()
+            self._bind(label.setText, english, korean)
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setObjectName(name)
+            slider.setRange(0, 10)
+            slider.setValue(5)
+            slider.setPageStep(1)
+            slider.setFixedWidth(90)
+            self._bind(slider.setToolTip, tip_en, tip_ko)
+            self._bind(slider.setAccessibleName, english, korean)
+            label.setBuddy(slider)
+            top.addWidget(label)
+            top.addWidget(slider)
+            setattr(self, name, slider)
         self.suggest_button = self._button("suggest", self.start_suggest)
         top.addWidget(self.suggest_button)
         layout.addLayout(top)
@@ -719,15 +814,22 @@ class MainWindow(QMainWindow):
         self._translations.append((self.timeline_help, "timeline_help"))
         timeline_layout.addWidget(self.timeline_help)
         zoom_row = QHBoxLayout()
-        zoom_row.addWidget(QLabel("Timeline scale / 시간 축"))
+        zoom_label = QLabel()
+        self._bind(zoom_label.setText, "Timeline scale", "시간 축")
+        zoom_row.addWidget(zoom_label)
         self.timeline_zoom = QComboBox()
         self.timeline_zoom.setObjectName("timelineZoom")
-        self.timeline_zoom.setAccessibleName("Timeline zoom level / 시간 축 확대 수준")
-        self.timeline_zoom.addItem("Overview / 전체", "overview")
-        self.timeline_zoom.addItem("Day detail / 일별", "day")
-        self.timeline_zoom.addItem("Hour detail / 시간별", "hour")
+        self._bind(self.timeline_zoom.setAccessibleName, "Timeline zoom level", "시간 축 확대 수준")
+        for index, (data, english, korean) in enumerate((("overview", "Overview", "전체"), ("day", "Day detail", "일별"), ("hour", "Hour detail", "시간별"))):
+            self.timeline_zoom.addItem("", data)
+            self._bind(lambda text, i=index: self.timeline_zoom.setItemText(i, text), english, korean)
+        legend = QLabel()
+        self._bind(legend.setText, "Bars: teal planned · gray locked · orange late · red conflict", "막대: 청록 배치 · 회색 고정 · 주황 지연 · 빨강 충돌")
+        legend.setStyleSheet("color:#526575;font-size:11px;")
         self.timeline_zoom.currentIndexChanged.connect(self._zoom_changed)
         zoom_row.addWidget(self.timeline_zoom)
+        zoom_row.addSpacing(16)
+        zoom_row.addWidget(legend)
         zoom_row.addStretch()
         timeline_layout.addLayout(zoom_row)
         self.timeline = TimelineView()
@@ -743,7 +845,7 @@ class MainWindow(QMainWindow):
         issue_layout.addWidget(self.issue_heading)
         self.issues_list = QListWidget()
         self.issues_list.setObjectName("conflictList")
-        self.issues_list.setAccessibleName("Schedule conflicts and warnings / 일정 충돌과 경고")
+        self._bind(self.issues_list.setAccessibleName, "Schedule conflicts and warnings", "일정 충돌과 경고")
         self.issues_list.itemClicked.connect(self._issue_selected)
         self.issues_list.itemActivated.connect(self._issue_selected)
         issue_layout.addWidget(self.issues_list)
@@ -759,7 +861,8 @@ class MainWindow(QMainWindow):
     def _build_resources(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(_label("Each operation occupies its assigned machine and optional operator for the entire setup + run duration. Calendar gaps (including lunch) are unavailable. Review default calendars after import. / 공정은 준비 및 실행 시간 동안 기계와 작업자를 점유합니다. 가져오기 후 기본 근무 시간을 확인하세요."))
+        layout.addWidget(self._fixed_label("Each operation occupies its assigned machine and optional operator for the entire setup + run duration. Calendar gaps (including lunch) are unavailable. Review default calendars after import.",
+                                           "공정은 준비와 실행 시간 내내 기계와 작업자를 점유합니다. 근무 시간 사이의 빈 시간(점심 포함)에는 작업할 수 없습니다. 가져온 다음 기본 근무 시간을 확인하세요."))
         buttons = QHBoxLayout()
         for key, callback in (("add_resource", self.add_resource), ("edit_calendar", self.edit_calendar), ("remove_resource", self.remove_resource)):
             buttons.addWidget(self._button(key, callback))
@@ -774,33 +877,39 @@ class MainWindow(QMainWindow):
     def _build_scenarios(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(_label("Scenarios share operation definitions and resource calendars. Placements and locks are independent. ERP reimports update every scenario by stable operation ID. / 시나리오는 공정과 자원을 공유하며 배치와 고정은 별도로 유지됩니다."))
+        layout.addWidget(self._fixed_label("Scenarios share operation definitions and resource calendars. Placements and locks are independent. ERP reimports update every scenario by stable operation ID.",
+                                           "시나리오는 공정과 자원 근무 시간을 함께 쓰고, 배치와 고정은 시나리오마다 따로 둡니다. ERP를 다시 가져오면 공정 ID 기준으로 모든 시나리오가 갱신됩니다."))
         buttons = QHBoxLayout()
         buttons.addWidget(self._button("copy", self.copy_scenario_dialog))
         buttons.addStretch()
-        buttons.addWidget(QLabel("Compare current with / 비교 대상"))
+        compare_label = QLabel()
+        self._bind(compare_label.setText, "Compare current with", "비교 대상")
+        buttons.addWidget(compare_label)
         self.compare_selector = QComboBox()
         self.compare_selector.setObjectName("compareScenario")
-        self.compare_selector.setAccessibleName("Scenario to compare against")
+        self._bind(self.compare_selector.setAccessibleName, "Scenario to compare against", "비교할 시나리오")
         self.compare_selector.currentTextChanged.connect(self.refresh_compare)
         buttons.addWidget(self.compare_selector)
         layout.addLayout(buttons)
         self.compare_summary = _label("")
         layout.addWidget(self.compare_summary)
-        self.compare_table = _table(["Operation", "Job", "Comparison start", "Current start", "Shift", "Current lateness", "Lock change"], "scenarioComparison")
+        self.compare_table = _table(["Operation", "Job", "Comparison start", "Current start", "Shift", "Current lateness", "Locked"], "scenarioComparison")
         layout.addWidget(self.compare_table)
         self.tabs.addTab(page, self._tr("scenarios"))
 
     def _build_daily(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.addWidget(_label("Read-only dispatch snapshot for review. Exported files include validation warnings. Confirm the plan before giving production instructions. / 검토용 읽기 전용 작업 목록입니다. 내보낸 파일에도 검증 경고가 포함됩니다."))
+        layout.addWidget(self._fixed_label("Read-only dispatch snapshot for review. Exported files include validation warnings. Confirm the plan before giving production instructions.",
+                                           "검토용 읽기 전용 작업 목록입니다. 내보낸 파일에도 검증 경고가 들어갑니다. 생산 지시 전에 계획을 확인하세요."))
         buttons = QHBoxLayout()
-        buttons.addWidget(QLabel("Local day / 현지 날짜"))
+        day_label = QLabel()
+        self._bind(day_label.setText, "Day", "날짜")
+        buttons.addWidget(day_label)
         self.day_filter = QLineEdit()
         self.day_filter.setObjectName("dailyDate")
-        self.day_filter.setPlaceholderText("YYYY-MM-DD · empty = all / 비우면 전체")
-        self.day_filter.setAccessibleName("Local date for daily work list, empty for all dates")
+        self._bind(self.day_filter.setPlaceholderText, "YYYY-MM-DD · empty shows every day", "YYYY-MM-DD · 비우면 전체")
+        self._bind(self.day_filter.setAccessibleName, "Date for the daily work list, empty for all dates", "작업 목록 날짜, 비우면 전체")
         self.day_filter.returnPressed.connect(self.refresh_daily)
         buttons.addWidget(self.day_filter, 1)
         for key, callback in (("refresh", self.refresh_daily), ("csv", self.export_csv_dialog), ("html", self.export_html_dialog), ("print", self.print_plan)):
@@ -814,6 +923,7 @@ class MainWindow(QMainWindow):
 
     def _language_changed(self):
         self.language = self.language_box.currentData()
+        i18n.set_language(self.language)
         for widget, key in self._translations:
             widget.setText(self._tr(key))
             if isinstance(widget, QWidget):
@@ -821,14 +931,20 @@ class MainWindow(QMainWindow):
         for i, key in enumerate(("schedule", "resources", "scenarios", "daily")):
             self.tabs.setTabText(i, self._tr(key))
         self.filter.setPlaceholderText(self._tr("search"))
+        i18n.set_language(self.language)
+        for setter, english, korean in self._texts:
+            setter(T(english, korean))
         if self.language == "ko":
             self.operations_table.setHorizontalHeaderLabels(["공정", "작업", "기계", "작업자", "시작", "종료", "준비 + 실행", "납기", "상태"])
             self.resources_table.setHorizontalHeaderLabels(["유형", "자원", "근무 구간", "가용 시간", "첫 시작", "마지막 종료"])
             self.daily_table.setHorizontalHeaderLabels(["기계", "시작", "종료", "작업", "공정", "작업자", "고정", "납기"])
+            self.compare_table.setHorizontalHeaderLabels(["공정", "작업", "비교 시작", "현재 시작", "이동", "현재 지연", "고정"])
         else:
             self.operations_table.setHorizontalHeaderLabels(["Operation", "Job", "Machine", "Operator", "Start", "End", "Setup + run", "Due", "State"])
             self.resources_table.setHorizontalHeaderLabels(["Type", "Resource", "Available windows", "Available hours", "First start", "Last end"])
             self.daily_table.setHorizontalHeaderLabels(["Machine", "Start", "End", "Job", "Operation", "Operator", "Lock", "Due"])
+            self.compare_table.setHorizontalHeaderLabels(["Operation", "Job", "Comparison start", "Current start", "Shift", "Current lateness", "Locked"])
+        self.timeline.setAccessibleName(T("Machine schedule timeline. Use the operations table for keyboard editing.", "기계별 일정 타임라인. 키보드로 편집하려면 공정 표를 쓰세요."))
         self.refresh()
 
     def eventFilter(self, watched, event):
@@ -846,7 +962,7 @@ class MainWindow(QMainWindow):
         try:
             validate_project_for_storage(project)
         except StorageProblem as exc:
-            self._error("Cannot apply change — current project unchanged / 변경 적용 불가", exc)
+            self._error(T("Cannot apply change — current project unchanged", "변경을 적용할 수 없음 — 프로젝트는 그대로입니다"), exc)
             return False
         return True
 
@@ -871,7 +987,7 @@ class MainWindow(QMainWindow):
         self.project = deepcopy(project)
         self.dirty = True
         self.refresh()
-        self.statusBar().showMessage(description + " · Undo available / 실행 취소 가능", 8000)
+        self.statusBar().showMessage(description + T(" · Undo available", " · 실행 취소 가능"), 8000)
         return True
 
     def undo(self):
@@ -881,13 +997,14 @@ class MainWindow(QMainWindow):
             self.project, description = self.undo_stack.pop()
             self.dirty = True
             self.refresh()
-            self.statusBar().showMessage("Undid: " + description, 7000)
+            self.statusBar().showMessage(T("Undid: ", "실행 취소: ") + description, 7000)
 
     def refresh(self):
         self._refreshing = True
         self.setWindowTitle(f"{'● ' if self.dirty else ''}{self.project.name} — ShopShift")
         self.title_label.setText(self.project.name)
-        self.subtitle.setText(f"{self.project.timezone}  ·  {_time(self.project.horizon_start, self.project)} → {_time(self.project.horizon_end, self.project)}  ·  {str(self.path) if self.path else 'Not saved / 저장되지 않음'}")
+        self.subtitle.setText(T("Times in ", "시간대 ") + f"{self.project.timezone}  ·  {_time(self.project.horizon_start, self.project)} → {_time(self.project.horizon_end, self.project)}  ·  "
+                              + (str(self.path) if self.path else T("Not saved", "저장되지 않음")))
         self.actions["undo"].setEnabled(bool(self.undo_stack) and self._solver_thread is None)
         comparison = self.compare_selector.currentText()
         for box in (self.scenario_selector, self.compare_selector):
@@ -919,7 +1036,7 @@ class MainWindow(QMainWindow):
         late_count = len(late_operations)
         locked_count = sum(p.locked for p in placements.values())
         if self.language == "ko":
-            self.metrics.setText(f"공정 {len(operations)}  ·  배치 {len(placements)}  ·  미배치 {len(set(operations) - set(placements))}  ·  지연 작업 {len(late_jobs)} (공정 {late_count})  ·  고정 {locked_count}  ·  오류 {len(errors)}")
+            self.metrics.setText(f"공정 {len(operations)}  ·  배치 {len(placements)}  ·  미배치 {len(set(operations) - set(placements))}  ·  지연 작업 {len(late_jobs)} (공정 {late_count})  ·  고정 {locked_count}  ·  충돌 {len(errors)}")
         else:
             self.metrics.setText(f"{len(operations)} operations  ·  {len(placements)} placed  ·  {len(set(operations) - set(placements))} unscheduled  ·  {len(late_jobs)} late jobs ({late_count} operations)  ·  {locked_count} locked  ·  {len(errors)} conflicts")
         self.operations_table.blockSignals(True)
@@ -933,20 +1050,26 @@ class MainWindow(QMainWindow):
             if self.late_only.isChecked() and op.job not in late_jobs:
                 continue
             visible.add(op.id)
-            state = ("지연" if self.language == "ko" else "Late") if late else ("배치" if self.language == "ko" else "Placed") if placement else ("미배치" if self.language == "ko" else "Unscheduled")
+            if late:
+                state = T(f"Late {_duration(placement.start + op.duration - op.due)}", f"{_duration(placement.start + op.duration - op.due)} 지연")
+            else:
+                state = T("Placed", "배치") if placement else T("Unscheduled", "미배치")
             if placement and placement.locked:
-                state += " · " + ("고정" if self.language == "ko" else "Locked")
+                state += " · " + T("Locked", "고정")
             _put_row(self.operations_table, self.operations_table.rowCount(), [op.id, op.job, op.machine, op.operator or "—",
                      _time(placement.start, self.project) if placement else "—", _time(placement.start + op.duration, self.project) if placement else "—",
-                     f"{op.setup / 60:g} + {op.run / 60:g} min", _time(op.due, self.project), state], op.id)
+                     f"{_duration(op.setup)} + {_duration(op.run)}", _time(op.due, self.project), state], op.id)
+            if late:
+                self.operations_table.item(self.operations_table.rowCount() - 1, 8).setForeground(QColor("#b4561b"))
         self.operations_table.blockSignals(False)
         self.timeline.set_project(self.project, visible, self.current_issues)
         self.issues_list.clear()
-        self.issue_heading.setText(f"{'검증' if self.language == 'ko' else 'Validation'} · {len(errors)} errors · {len(self.current_issues) - len(errors)} warnings — {self._tr('inspect')}")
+        warnings = len(self.current_issues) - len(errors)
+        self.issue_heading.setText(T(f"Validation · {len(errors)} conflicts · {warnings} warnings — ", f"검증 · 충돌 {len(errors)} · 경고 {warnings} — ") + self._tr("inspect"))
         if not self.current_issues:
-            self.issues_list.addItem("No scheduling conflicts detected. / 일정 충돌이 발견되지 않았습니다.")
+            self.issues_list.addItem(T("No scheduling conflicts detected.", "일정 충돌이 없습니다."))
         for issue in self.current_issues:
-            item = QListWidgetItem(f"{issue.severity.upper()} · {issue.code} · {issue.message}")
+            item = QListWidgetItem(i18n.issue_line(issue))
             item.setData(Qt.ItemDataRole.UserRole, issue.operation_ids)
             item.setToolTip(issue.message)
             if issue.severity == "error":
@@ -958,10 +1081,11 @@ class MainWindow(QMainWindow):
     def refresh_resources(self):
         self.resources_table.setRowCount(0)
         for kind, resources in (("Machine", self.project.machines), ("Operator", self.project.operators)):
+            shown = T("Machine", "기계") if kind == "Machine" else T("Operator", "작업자")
             for resource in resources.values():
                 windows = resource.windows
-                _put_row(self.resources_table, self.resources_table.rowCount(), [kind, resource.id, len(windows),
-                         f"{sum(w.end - w.start for w in windows) / 3600:g}", _time(min((w.start for w in windows), default=None), self.project),
+                _put_row(self.resources_table, self.resources_table.rowCount(), [shown, resource.id, len(windows),
+                         _duration(sum(w.end - w.start for w in windows)), _time(min((w.start for w in windows), default=None), self.project),
                          _time(max((w.end for w in windows), default=None), self.project)], kind + ":" + resource.id)
 
     def refresh_compare(self, *_):
@@ -979,11 +1103,17 @@ class MainWindow(QMainWindow):
             if (a.start if a else None, a.locked if a else False) == (b.start if b else None, b.locked if b else False):
                 continue
             changed += 1
-            shift = f"{(b.start - a.start) / 60:+g} min" if a and b else "Placed" if b else "Unscheduled"
+            if a and b:
+                shift = ("+" if b.start >= a.start else "") + _duration(b.start - a.start) if b.start != a.start else "0"
+            else:
+                shift = T("Placed", "배치") if b else T("Unscheduled", "미배치")
             late = max(0, b.start + op.duration - op.due) if b and op.due is not None else 0
+            yes_no = (T("no", "아니요"), T("yes", "예"))
             _put_row(self.compare_table, self.compare_table.rowCount(), [op.id, op.job, _time(a.start, self.project) if a else "—",
-                     _time(b.start, self.project) if b else "—", shift, _duration(late), f"{bool(a and a.locked)} → {bool(b and b.locked)}"], op.id)
-        self.compare_summary.setText(f"{self.project.active_scenario} compared with {name} · {changed} changed placements / 변경된 배치 {changed}개")
+                     _time(b.start, self.project) if b else "—", shift, _duration(late) if late else "—",
+                     f"{yes_no[bool(a and a.locked)]} → {yes_no[bool(b and b.locked)]}"], op.id)
+        self.compare_summary.setText(T(f"{self.project.active_scenario} compared with {name} · {changed} changed placements",
+                                       f"{self.project.active_scenario}와(과) {name} 비교 · 바뀐 배치 {changed}개"))
 
     def _daily_bounds(self) -> tuple[int, int] | None:
         text = self.day_filter.text().strip()
@@ -1008,10 +1138,10 @@ class MainWindow(QMainWindow):
             if bounds and not (placement.start < bounds[1] and end > bounds[0]):
                 continue
             _put_row(self.daily_table, self.daily_table.rowCount(), [op.machine, _time(placement.start, self.project), _time(end, self.project),
-                     op.job, op.id, op.operator or "—", "Yes" if placement.locked else "", _time(op.due, self.project)], op.id)
+                     op.job, op.id, op.operator or "—", T("Yes", "예") if placement.locked else "", _time(op.due, self.project)], op.id)
         for op in self.project.operations.values():
             if op.id not in self.project.scenario.placements:
-                _put_row(self.daily_table, self.daily_table.rowCount(), [op.machine, "Unscheduled / 미배치", "—",
+                _put_row(self.daily_table, self.daily_table.rowCount(), [op.machine, T("Unscheduled", "미배치"), "—",
                          op.job, op.id, op.operator or "—", "", _time(op.due, self.project)], op.id)
 
     def selected_operation(self) -> str | None:
@@ -1046,7 +1176,7 @@ class MainWindow(QMainWindow):
         if op_id:
             self.edit_operation(op_id)
         else:
-            self.statusBar().showMessage("Select an operation first. / 공정을 먼저 선택하세요.", 6000)
+            self.statusBar().showMessage(T("Select an operation first.", "공정을 먼저 선택하세요."), 6000)
 
     def edit_operation(self, op_id: str):
         if self._solver_thread is not None or op_id not in self.project.operations:
@@ -1063,7 +1193,7 @@ class MainWindow(QMainWindow):
             candidate.scenario.placements.pop(op_id, None)
         else:
             candidate.scenario.placements[op_id] = deepcopy(placement)
-        self.apply_project(candidate, f"Edited placement {op_id}")
+        self.apply_project(candidate, T(f"Edited placement {op_id}", f"{op_id} 배치 수정"))
         self.select_operation(op_id)
 
     def move_operation(self, op_id: str, start: int):
@@ -1098,21 +1228,23 @@ class MainWindow(QMainWindow):
         del candidate.operations[op_id]
         for scenario in candidate.scenarios.values():
             scenario.placements.pop(op_id, None)
-        self.apply_project(candidate, f"Retired completed operation {op_id} from all scenarios")
+        self.apply_project(candidate, T(f"Retired completed operation {op_id} from all scenarios", f"완료 공정 {op_id}을(를) 모든 시나리오에서 제거"))
 
     def retire_selected(self):
         op_id = self.selected_operation()
         if not op_id:
-            self.statusBar().showMessage("Select an operation first. / 공정을 먼저 선택하세요.", 5000)
+            self.statusBar().showMessage(T("Select an operation first.", "공정을 먼저 선택하세요."), 5000)
             return
         referenced = [op.id for op in self.project.operations.values() if op_id in op.predecessors]
         if referenced:
-            self._error("Cannot retire a required predecessor / 선행 공정 제거 불가",
-                        ValueError(f"{op_id} is required by: {', '.join(referenced)}. Retire completed downstream operations first, or update dependencies through an ERP import."))
+            self._error(T("Cannot retire a required predecessor", "선행 공정은 제거할 수 없음"),
+                        ValueError(T(f"{op_id} is required by: {', '.join(referenced)}. Retire completed downstream operations first, or update dependencies through an ERP import.",
+                                     f"{op_id}은(는) 다음 공정의 선행 공정입니다: {', '.join(referenced)}. 뒤 공정을 먼저 제거하거나 ERP 가져오기로 선행 관계를 바꾸세요.")))
             return
         count = sum(op_id in scenario.placements for scenario in self.project.scenarios.values())
-        review = ReviewDialog("Retire completed operation / 완료 공정 제거", op_id,
-                              f"Remove this operation and its {count} placements from all scenarios. Other operations and resource calendars remain.\n\nUndo restores the operation. A later ERP import containing the same ID adds it again.\n\n공정 및 모든 시나리오의 배치를 제거합니다. 실행 취소로 복원할 수 있습니다.", self)
+        review = ReviewDialog(T("Retire completed operation", "완료 공정 제거"), op_id,
+                              T(f"Remove this operation and its {count} placements from all scenarios. Other operations and resource calendars remain.\n\nUndo restores the operation. A later ERP import containing the same ID adds it again.",
+                                f"이 공정과 모든 시나리오의 배치 {count}개를 제거합니다. 다른 공정과 근무 시간은 그대로입니다.\n\n실행 취소로 되돌릴 수 있습니다. 나중에 같은 ID가 든 ERP 파일을 가져오면 다시 추가됩니다."), self)
         if review.exec() == QDialog.DialogCode.Accepted:
             self.retire_operation(op_id)
 
@@ -1121,64 +1253,66 @@ class MainWindow(QMainWindow):
             return
         candidate = deepcopy(self.project)
         candidate.active_scenario = name
-        self.apply_project(candidate, f"Switched to scenario {name}")
+        self.apply_project(candidate, T(f"Switched to scenario {name}", f"시나리오 {name}(으)로 전환"))
 
     def copy_scenario(self, name: str):
         name = name.strip()
         if not name or name in self.project.scenarios:
-            raise ValueError("Use a new, nonempty scenario name.")
+            raise ValueError(T("Use a new, nonempty scenario name.", "새 시나리오 이름을 입력하세요."))
         candidate = deepcopy(self.project)
         candidate.scenarios[name] = Scenario(name, deepcopy(candidate.scenario.placements))
         candidate.active_scenario = name
-        self.apply_project(candidate, f"Copied scenario to {name}")
+        self.apply_project(candidate, T(f"Copied scenario to {name}", f"시나리오를 {name}(으)로 복사"))
 
     def copy_scenario_dialog(self):
-        name, accepted = QInputDialog.getText(self, "Copy scenario / 시나리오 복사", "New scenario name / 새 이름")
+        name, accepted = QInputDialog.getText(self, T("Copy scenario", "시나리오 복사"), T("New scenario name", "새 시나리오 이름"))
         if accepted:
             try:
                 self.copy_scenario(name)
             except ValueError as exc:
-                self._error("Cannot copy scenario", exc)
+                self._error(T("Cannot copy scenario", "시나리오를 복사할 수 없음"), exc)
 
     def edit_project(self):
         dialog = ProjectDialog(self.project, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             candidate = deepcopy(self.project)
             candidate.name, candidate.timezone, candidate.horizon_start, candidate.horizon_end = dialog.values
-            self.apply_project(candidate, "Updated project settings")
+            self.apply_project(candidate, T("Updated project settings", "프로젝트 설정 변경"))
 
     def _selected_resource(self):
         rows = self.resources_table.selectionModel().selectedRows()
         if not rows:
-            self.statusBar().showMessage("Select a resource first. / 자원을 먼저 선택하세요.", 5000)
+            self.statusBar().showMessage(T("Select a resource first.", "자원을 먼저 선택하세요."), 5000)
             return None
         value = self.resources_table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)
         kind, resource_id = value.split(":", 1)
         return kind, resource_id
 
     def add_resource(self):
-        kind, accepted = QInputDialog.getItem(self, "Resource type / 자원 유형", "Type", ["Machine", "Operator"], editable=False)
+        kinds = [T("Machine", "기계"), T("Operator", "작업자")]
+        shown, accepted = QInputDialog.getItem(self, T("Resource type", "자원 유형"), T("Type", "유형"), kinds, editable=False)
         if not accepted:
             return
-        name, accepted = QInputDialog.getText(self, "Resource ID / 자원 ID", "Exact ID used in ERP exports / ERP 파일의 정확한 ID")
+        kind = "Machine" if shown == kinds[0] else "Operator"
+        name, accepted = QInputDialog.getText(self, T("Resource ID", "자원 ID"), T("Exact ID used in ERP exports", "ERP 파일에 쓰인 ID 그대로"))
         if not accepted:
             return
         name = name.strip()
         resources = self.project.machines if kind == "Machine" else self.project.operators
         if not name or name in resources:
-            self._error("Cannot add resource", ValueError("Use a new, nonempty resource ID."))
+            self._error(T("Cannot add resource", "자원을 추가할 수 없음"), ValueError(T("Use a new, nonempty resource ID.", "새 자원 ID를 입력하세요.")))
             return
         try:
             resource = Resource(name, working_windows(self.project.horizon_start, self.project.horizon_end, self.project.timezone))
         except (ValueError, OverflowError, OSError, KeyError) as exc:
-            self._error("Cannot generate resource calendar", exc)
+            self._error(T("Cannot generate resource calendar", "근무 시간을 만들 수 없음"), exc)
             return
         dialog = CalendarDialog(self.project, resource, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             candidate = deepcopy(self.project)
             resource.windows = dialog.windows
             (candidate.machines if kind == "Machine" else candidate.operators)[name] = resource
-            self.apply_project(candidate, f"Added {kind.lower()} {name}")
+            self.apply_project(candidate, T(f"Added {kind.lower()} {name}", f"{T('Machine', '기계') if kind == 'Machine' else T('Operator', '작업자')} {name} 추가"))
 
     def edit_calendar(self, *_):
         selected = self._selected_resource()
@@ -1190,7 +1324,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             candidate = deepcopy(self.project)
             (candidate.machines if kind == "Machine" else candidate.operators)[resource_id].windows = dialog.windows
-            self.apply_project(candidate, f"Updated {resource_id} calendar")
+            self.apply_project(candidate, T(f"Updated {resource_id} calendar", f"{resource_id} 근무 시간 변경"))
 
     def remove_resource(self):
         selected = self._selected_resource()
@@ -1199,21 +1333,21 @@ class MainWindow(QMainWindow):
         kind, resource_id = selected
         used = [op.id for op in self.project.operations.values() if (op.machine if kind == "Machine" else op.operator) == resource_id]
         if used:
-            self._error("Resource is in use", ValueError("Update the ERP export assignment before removing this resource: " + ", ".join(used[:10])))
+            self._error(T("Resource is in use", "사용 중인 자원"), ValueError(T("Update the ERP export assignment before removing this resource: ", "이 자원을 지우기 전에 ERP 파일의 배정을 바꾸세요: ") + ", ".join(used[:10])))
             return
         candidate = deepcopy(self.project)
         del (candidate.machines if kind == "Machine" else candidate.operators)[resource_id]
-        self.apply_project(candidate, f"Removed {resource_id}")
+        self.apply_project(candidate, T(f"Removed {resource_id}", f"{resource_id} 삭제"))
 
     def import_from(self, path, mapping, unit="minutes", apply=False):
         from .importing import import_operations
         result = import_operations(self.project, path, mapping, duration_unit=unit)
         if apply:
-            self.apply_project(result.project, f"Imported {Path(path).name}")
+            self.apply_project(result.project, T(f"Imported {Path(path).name}", f"{Path(path).name} 가져옴"))
         return result
 
     def import_dialog(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Import ERP export / ERP 파일 가져오기", "", "ERP exports (*.csv *.xlsx)")
+        path, _ = QFileDialog.getOpenFileName(self, T("Import ERP export", "ERP 파일 가져오기"), "", T("ERP exports (*.csv *.xlsx)", "ERP 파일 (*.csv *.xlsx)"))
         if not path:
             return
         try:
@@ -1222,21 +1356,25 @@ class MainWindow(QMainWindow):
                 return
             result = self.import_from(path, mapping.mapping, mapping.unit.currentText())
             issues = validate(result.project)
-            summary = f"{len(result.added)} added · {len(result.updated)} updated · {len(result.retained)} retained"
-            details = "All existing placements and locks are retained by operation ID. Omitted operations remain in the project.\n\n"
-            details += "Added: " + ", ".join(result.added) + "\nUpdated: " + ", ".join(result.updated) + "\nRetained: " + ", ".join(result.retained)
-            details += "\n\nIMPORT NOTES\n" + "\n".join(result.warnings) + "\n\nVALIDATION\n" + (_issues_text(issues) or "No conflicts.")
-            review = ReviewDialog("Review import / 가져오기 검토", summary, details, self)
+            summary = T(f"{len(result.added)} added · {len(result.updated)} updated · {len(result.retained)} retained",
+                        f"추가 {len(result.added)} · 갱신 {len(result.updated)} · 유지 {len(result.retained)}")
+            details = T("All existing placements and locks are retained by operation ID. Omitted operations remain in the project.\n\n",
+                        "기존 배치와 고정은 공정 ID 기준으로 모두 유지됩니다. 파일에 없는 공정도 프로젝트에 남습니다.\n\n")
+            details += (T("Added: ", "추가: ") + ", ".join(result.added) + T("\nUpdated: ", "\n갱신: ") + ", ".join(result.updated)
+                        + T("\nRetained: ", "\n유지: ") + ", ".join(result.retained))
+            details += (T("\n\nIMPORT NOTES\n", "\n\n가져오기 참고\n") + "\n".join(result.warnings) + T("\n\nVALIDATION\n", "\n\n검증\n")
+                        + (_issues_text(issues) or T("No conflicts.", "충돌 없음.")))
+            review = ReviewDialog(T("Review import", "가져오기 검토"), summary, details, self)
             if review.exec() == QDialog.DialogCode.Accepted:
-                self.apply_project(result.project, f"Imported {Path(path).name}")
+                self.apply_project(result.project, T(f"Imported {Path(path).name}", f"{Path(path).name} 가져옴"))
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
-            self._error("Import failed — project unchanged / 가져오기 실패", exc)
+            self._error(T("Import failed — project unchanged", "가져오기 실패 — 프로젝트는 그대로입니다"), exc)
 
     def start_suggest(self, _checked=False, *, show_review=True, time_limit=5.0):
         if self._solver_thread is not None:
             return
         if not self.project.operations:
-            self.statusBar().showMessage("Import operations first. / 먼저 공정을 가져오세요.", 6000)
+            self.statusBar().showMessage(T("Import operations first.", "먼저 공정을 가져오세요."), 6000)
             return
         self._show_solver_review = show_review
         self._solver_snapshot = deepcopy(self.project)
@@ -1245,9 +1383,9 @@ class MainWindow(QMainWindow):
         self.tabs.setEnabled(False)
         for action in self.actions.values():
             action.setEnabled(False)
-        self.statusBar().showMessage("Computing a proposal with one solver worker… The current plan stays unchanged. / 일정 제안 계산 중…")
+        self.statusBar().showMessage(T("Computing a proposal… The current plan stays unchanged.", "일정 제안을 계산하는 중… 지금 계획은 바뀌지 않습니다."))
         self._solver_thread = QThread(self)
-        self._solver_worker = _SolverWorker(self._solver_snapshot, min(30.0, max(0.05, time_limit)))
+        self._solver_worker = _SolverWorker(self._solver_snapshot, min(30.0, max(0.05, time_limit)), self.suggestion_weights())
         self._solver_worker.moveToThread(self._solver_thread)
         self._solver_thread.started.connect(self._solver_worker.run)
         self._solver_worker.result.connect(self._on_solved)
@@ -1256,6 +1394,11 @@ class MainWindow(QMainWindow):
         self._solver_worker.finished.connect(self._solver_worker.deleteLater)
         self._solver_thread.finished.connect(self._solver_done)
         self._solver_thread.start()
+
+    def suggestion_weights(self) -> tuple[int, int]:
+        """Lateness and finish-time weights from the sliders; both 0 means equal."""
+        weights = (self.weightDue.value(), self.weightFinish.value())
+        return weights if any(weights) else (1, 1)
 
     def _solver_done(self):
         thread = self._solver_thread
@@ -1271,14 +1414,15 @@ class MainWindow(QMainWindow):
         self.actions["undo"].setEnabled(bool(self.undo_stack))
 
     def _on_solver_failed(self, message):
-        self.statusBar().showMessage("Scheduling failed. The current plan is unchanged.")
+        self.statusBar().showMessage(T("Scheduling failed. The current plan is unchanged.", "일정 계산 실패. 지금 계획은 그대로입니다."))
         if self._show_solver_review:
-            self._error("Scheduling failed", RuntimeError(message))
+            self._error(T("Scheduling failed", "일정 계산 실패"), RuntimeError(message))
 
     def _on_solved(self, result):
         self.last_solve_result = result
         self.schedule_ready.emit(result)
-        self.statusBar().showMessage(f"Proposal: {result.status} · {result.wall_time:.2f}s. Review required before applying.")
+        self.statusBar().showMessage(T(f"Proposal: {result.status} · {result.wall_time:.2f}s. Review it before applying.",
+                                       f"제안: {result.status} · {result.wall_time:.2f}초. 적용하기 전에 검토하세요."))
         if not self._show_solver_review:
             return
         candidate = deepcopy(self._solver_snapshot)
@@ -1290,12 +1434,17 @@ class MainWindow(QMainWindow):
         for op_id, placement in result.placements.items():
             old = self.project.scenario.placements.get(op_id)
             if old is None or old.start != placement.start:
-                changes.append(f"{op_id}: {_time(old.start, self.project) if old else 'Unscheduled'} → {_time(placement.start, self.project)}")
-        details = f"Status: {result.status}\nWall time: {result.wall_time:.3f}s\nObjective: {result.objective}\nBest bound: {result.bound}\n\n"
-        details += "Objective: sum of per-operation tardiness + makespan, in seconds with equal weights. Due dates are soft targets. Optimal means proved best for this objective. Feasible is a complete validated plan without proof of optimality. Time-limited means no candidate was found before the limit; feasibility remains unknown.\n\n"
-        details += "CHANGES\n" + ("\n".join(changes) or "No placement changes.")
-        details += "\n\nVALIDATION\n" + (_issues_text(issues) or "No conflicts. All operations are placed.")
-        review = ReviewDialog("Review scheduling proposal / 일정 제안 검토", f"{result.status.upper()} · {len(result.placements)} / {len(self.project.operations)} operations placed", details, self, can_apply)
+                changes.append(f"{op_id}: {_time(old.start, self.project) if old else T('Unscheduled', '미배치')} → {_time(placement.start, self.project)}")
+        due, finish = self.suggestion_weights()
+        details = T(f"Status: {result.status}\nTime: {result.wall_time:.2f}s\nPriorities: due dates {due}, finish early {finish}\n\n",
+                    f"상태: {result.status}\n계산 시간: {result.wall_time:.2f}초\n우선순위: 납기 {due}, 빨리 끝내기 {finish}\n\n")
+        details += T("The suggestion minimizes lateness past due times and the time the last operation finishes, weighted by the two sliders. Due dates are targets, not hard limits. Optimal means proved best for these priorities; feasible means a complete, checked plan without that proof.\n\n",
+                     "제안은 두 슬라이더의 비중대로 납기 지연과 마지막 공정이 끝나는 시각을 줄입니다. 납기는 목표일 뿐 절대 조건이 아닙니다. optimal은 이 우선순위에서 가장 좋다고 증명된 계획, feasible은 증명은 없지만 검증을 통과한 완전한 계획입니다.\n\n")
+        details += T("CHANGES\n", "변경\n") + ("\n".join(changes) or T("No placement changes.", "바뀐 배치 없음."))
+        details += T("\n\nVALIDATION\n", "\n\n검증\n") + (_issues_text(issues) or T("No conflicts. All operations are placed.", "충돌 없음. 모든 공정이 배치되었습니다."))
+        review = ReviewDialog(T("Review scheduling proposal", "일정 제안 검토"),
+                              T(f"{result.status.upper()} · {len(result.placements)} / {len(self.project.operations)} operations placed",
+                                f"{result.status.upper()} · 공정 {len(self.project.operations)}개 중 {len(result.placements)}개 배치"), details, self, can_apply)
         if review.exec() == QDialog.DialogCode.Accepted:
             self.apply_suggestion(result)
 
@@ -1313,12 +1462,12 @@ class MainWindow(QMainWindow):
         issues = validate(candidate)
         if any(issue.severity == "error" for issue in issues):
             raise ValueError("Independent validation rejected the proposal:\n" + _issues_text(issues))
-        self.apply_project(candidate, f"Applied {result.status} scheduling proposal")
+        self.apply_project(candidate, T(f"Applied {result.status} scheduling proposal", f"일정 제안({result.status}) 적용"))
 
     def _confirm_discard(self) -> bool:
         if not self.dirty:
             return True
-        answer = QMessageBox.warning(self, "Unsaved changes / 저장되지 않은 변경", "Save changes before continuing? / 계속하기 전에 변경 사항을 저장할까요?",
+        answer = QMessageBox.warning(self, T("Unsaved changes", "저장되지 않은 변경"), T("Save changes before continuing?", "계속하기 전에 변경 사항을 저장할까요?"),
                                      QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
                                      QMessageBox.StandardButton.Save)
         if answer == QMessageBox.StandardButton.Save:
@@ -1339,10 +1488,10 @@ class MainWindow(QMainWindow):
         if self._confirm_discard():
             from .demo import demo_project
             self.set_project(demo_project())
-            self.statusBar().showMessage("Synthetic demo opened. Save a copy to keep edits. / 합성 예제입니다.", 9000)
+            self.statusBar().showMessage(T("Synthetic demo opened. Save a copy to keep edits.", "예제를 열었습니다. 수정 내용을 남기려면 다른 이름으로 저장하세요."), 9000)
 
     def open_project(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open project / 프로젝트 열기", "", "ShopShift projects (*.shopshift *.json);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, T("Open project", "프로젝트 열기"), "", T("ShopShift projects (*.shopshift *.json);;All files (*)", "ShopShift 프로젝트 (*.shopshift *.json);;모든 파일 (*)"))
         if path and self._confirm_discard():
             self.open_path(path)
 
@@ -1354,8 +1503,8 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
             message = str(exc)
             if Path(str(path) + ".bak").exists():
-                message += "\nA previous-save backup exists. Use File → Restore backup to inspect it."
-            self._error("Cannot open project — current project unchanged", ValueError(message))
+                message += T("\nA previous-save backup exists. Use File → Restore backup to inspect it.", "\n이전 저장본의 백업이 있습니다. 파일 → 백업 복원으로 확인하세요.")
+            self._error(T("Cannot open project — current project unchanged", "프로젝트를 열 수 없음 — 지금 프로젝트는 그대로입니다"), ValueError(message))
             return False
 
     def save_to(self, path) -> bool:
@@ -1363,46 +1512,47 @@ class MainWindow(QMainWindow):
         try:
             save_project(self.project, path)
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
-            self._error("Save failed — changes are still in memory / 저장 실패", exc)
+            self._error(T("Save failed — changes are still in memory", "저장 실패 — 변경 내용은 아직 남아 있습니다"), exc)
             return False
         self.path = Path(path)
         self.dirty = False
         self.refresh()
-        self.statusBar().showMessage(f"Saved {self.path.name}", 6000)
+        self.statusBar().showMessage(T(f"Saved {self.path.name}", f"{self.path.name} 저장함"), 6000)
         return True
 
     def save(self) -> bool:
         return self.save_to(self.path) if self.path else self.save_as()
 
     def save_as(self) -> bool:
-        path, _ = QFileDialog.getSaveFileName(self, "Save project / 프로젝트 저장", str(self.path or "shop-plan.shopshift"), "ShopShift project (*.shopshift)")
+        path, _ = QFileDialog.getSaveFileName(self, T("Save project", "프로젝트 저장"), str(self.path or "shop-plan.shopshift"), T("ShopShift project (*.shopshift)", "ShopShift 프로젝트 (*.shopshift)"))
         return self.save_to(path) if path else False
 
     def backup(self):
         from .storage import backup_project
-        path, _ = QFileDialog.getSaveFileName(self, "Create backup / 백업 만들기", "shop-plan-backup.shopshift", "ShopShift backup (*.shopshift)")
+        path, _ = QFileDialog.getSaveFileName(self, T("Create backup", "백업 만들기"), "shop-plan-backup.shopshift", T("ShopShift backup (*.shopshift)", "ShopShift 백업 (*.shopshift)"))
         if path:
             try:
                 backup_project(self.project, path)
-                self.statusBar().showMessage(f"Backup created: {Path(path).name}", 6000)
+                self.statusBar().showMessage(T(f"Backup created: {Path(path).name}", f"백업 만듦: {Path(path).name}"), 6000)
             except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
-                self._error("Backup failed", exc)
+                self._error(T("Backup failed", "백업 실패"), exc)
 
     def restore(self):
         from .storage import load_project
-        path, _ = QFileDialog.getOpenFileName(self, "Restore backup / 백업 복원", "", "Backups (*.shopshift *.bak *.json);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, T("Restore backup", "백업 복원"), "", T("Backups (*.shopshift *.bak *.json);;All files (*)", "백업 (*.shopshift *.bak *.json);;모든 파일 (*)"))
         if not path:
             return
         try:
             project = load_project(path)
-            review = ReviewDialog("Review backup / 백업 검토", project.name,
-                                  f"{len(project.operations)} operations · {len(project.scenarios)} scenarios\n{project.timezone}\n\n" + (_issues_text(validate(project)) or "No validation conflicts."), self)
+            review = ReviewDialog(T("Review backup", "백업 검토"), project.name,
+                                  T(f"{len(project.operations)} operations · {len(project.scenarios)} scenarios", f"공정 {len(project.operations)} · 시나리오 {len(project.scenarios)}")
+                                  + f"\n{project.timezone}\n\n" + (_issues_text(validate(project)) or T("No validation conflicts.", "검증 충돌 없음.")), self)
             if review.exec() == QDialog.DialogCode.Accepted and self._confirm_discard() and self.set_project(project):
                 self.dirty = True
                 self.refresh()
-                self.statusBar().showMessage("Backup restored in memory. Save as a project to keep it. / 복원 후 저장하세요.", 9000)
+                self.statusBar().showMessage(T("Backup restored in memory. Save as a project to keep it.", "백업을 불러왔습니다. 남기려면 프로젝트로 저장하세요."), 9000)
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
-            self._error("Restore failed — current project unchanged", exc)
+            self._error(T("Restore failed — current project unchanged", "복원 실패 — 지금 프로젝트는 그대로입니다"), exc)
 
     def _export_day(self):
         self._daily_bounds()  # Validate before opening a destination dialog.
@@ -1419,12 +1569,12 @@ class MainWindow(QMainWindow):
     def _export(self, exporter, file_filter, filename):
         try:
             day = self._export_day()
-            path, _ = QFileDialog.getSaveFileName(self, "Export read-only work list / 읽기 전용 작업 목록 내보내기", filename, file_filter)
+            path, _ = QFileDialog.getSaveFileName(self, T("Export read-only work list", "읽기 전용 작업 목록 내보내기"), filename, file_filter)
             if path:
                 exporter(self.project, path, day=day)
-                self.statusBar().showMessage(f"Exported {Path(path).name} · includes validation warnings", 7000)
+                self.statusBar().showMessage(T(f"Exported {Path(path).name} · includes validation warnings", f"{Path(path).name} 내보냄 · 검증 경고 포함"), 7000)
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
-            self._error("Export failed", exc)
+            self._error(T("Export failed", "내보내기 실패"), exc)
 
     def print_plan(self):
         from tempfile import TemporaryDirectory
@@ -1443,25 +1593,29 @@ class MainWindow(QMainWindow):
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     document.print_(printer)
         except Exception as exc:  # noqa: BLE001 - preserve the live draft and report UI boundary failures.
-            self._error("Printing failed — you can also export HTML", exc)
+            self._error(T("Printing failed — you can also export HTML", "인쇄 실패 — HTML로 내보낼 수도 있습니다"), exc)
 
     def _error(self, title, error):
         QMessageBox.critical(self, title, str(error))
 
     def about(self):
-        QMessageBox.about(self, "About ShopShift / ShopShift 정보",
-                          "<h2>ShopShift 0.1.0</h2><p>Offline scheduling workbench for one planner. No telemetry, accounts or ERP writes.</p>"
-                          "<p>ShopShift is MIT licensed. The interface uses <b>Qt / PySide6 under LGPLv3</b>. "
-                          "Scheduling uses the official Google OR-Tools CP-SAT engine (Apache-2.0).</p>"
-                          "<p>See the distribution’s <b>THIRD_PARTY_NOTICES</b> and <b>licenses</b> directory for license texts, "
-                          "corresponding Qt sources and instructions for replacing LGPL libraries.</p>"
-                          "<p>Plans are decision support. Review constraints and exports before issuing production instructions. "
-                          "Fixed assignments, nonpreemptive operations, no sequence-dependent setup.</p>"
-                          "<p>단일 계획자를 위한 오프라인 일정 작업 도구입니다. 생산 지시 전 제약 조건과 결과를 검토하세요.</p>")
+        QMessageBox.about(self, T("About ShopShift", "ShopShift 정보"), T(
+            "<h2>ShopShift 0.2.0</h2><p>Offline scheduling workbench for one planner. No telemetry, accounts or ERP writes.</p>"
+            "<p>ShopShift is MIT licensed. The interface uses <b>Qt / PySide6 under LGPLv3</b>. "
+            "Scheduling uses the official Google OR-Tools CP-SAT engine (Apache-2.0).</p>"
+            "<p>See the distribution’s <b>THIRD_PARTY_NOTICES</b> and <b>licenses</b> directory for license texts, "
+            "corresponding Qt sources and instructions for replacing LGPL libraries.</p>"
+            "<p>Plans are decision support. Review constraints and exports before issuing production instructions. "
+            "Fixed assignments, nonpreemptive operations, no sequence-dependent setup.</p>",
+            "<h2>ShopShift 0.2.0</h2><p>계획 담당자 한 명을 위한 오프라인 일정 작업 도구입니다. 사용 기록 전송, 계정, ERP 쓰기가 없습니다.</p>"
+            "<p>ShopShift는 MIT 라이선스입니다. 화면은 <b>Qt / PySide6 (LGPLv3)</b>를, 일정 계산은 Google OR-Tools CP-SAT (Apache-2.0)를 씁니다.</p>"
+            "<p>라이선스 원문, Qt 소스, LGPL 라이브러리 교체 방법은 배포본의 <b>THIRD_PARTY_NOTICES</b>와 <b>licenses</b> 폴더에 있습니다.</p>"
+            "<p>계획은 결정을 돕는 자료입니다. 생산 지시 전에 제약 조건과 내보낸 파일을 검토하세요. "
+            "배정은 고정이고, 공정은 중간에 끊기지 않으며, 순서에 따른 준비 시간은 다루지 않습니다.</p>"))
 
     def closeEvent(self, event):
         if self._solver_thread is not None:
-            self.statusBar().showMessage("Wait for the bounded scheduling proposal to finish, then close. / 일정 계산이 끝난 후 닫아주세요.", 10000)
+            self.statusBar().showMessage(T("Wait for the scheduling proposal to finish, then close.", "일정 계산이 끝난 다음 닫으세요."), 10000)
             event.ignore()
             return
         if self._confirm_discard():

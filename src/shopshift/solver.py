@@ -1,7 +1,8 @@
 """Bounded official OR-Tools CP-SAT suggestions, gated by a separate validator.
 
-Objective = sum(max(0, operation_end - operation_due)) + makespan, in seconds
-with 1:1 weights. Makespan is final completion minus horizon_start. Due dates
+Objective = lateness_weight * sum(max(0, operation_end - operation_due))
++ makespan_weight * makespan, in seconds, 1:1 by default. Makespan is final
+completion minus horizon_start. Due dates
 are soft. This is an operation-level objective, not job priorities or a promise
 of on-time delivery. No plan is applied by this API.
 """
@@ -53,7 +54,11 @@ def _intersection(left: list[tuple[int, int]], right: list[tuple[int, int]]) -> 
     return result
 
 
-def suggest(project: Project, scenario: Scenario | None = None, time_limit: float = 5.0) -> SolveResult:
+MAX_WEIGHT = 10
+
+
+def suggest(project: Project, scenario: Scenario | None = None, time_limit: float = 5.0,
+            lateness_weight: int = 1, makespan_weight: int = 1) -> SolveResult:
     """Suggest a complete plan without mutating inputs, using one solver worker.
 
     ``feasible`` means a validated incumbent, with optimality unproven (usually
@@ -73,6 +78,9 @@ def suggest(project: Project, scenario: Scenario | None = None, time_limit: floa
         usable_limit = False
     if not usable_limit:
         return result("invalid", [Issue("invalid_time_limit", "Time limit must be finite and positive.")])
+    weights = (lateness_weight, makespan_weight)
+    if (any(type(w) is not int or not 0 <= w <= MAX_WEIGHT for w in weights) or not any(weights)):
+        return result("invalid", [Issue("invalid_weights", f"Weights must be whole numbers from 0 to {MAX_WEIGHT}, not both 0.")])
     if not isinstance(project, Project):
         return result("invalid", [Issue("invalid_project", "Expected a Project instance.")])
 
@@ -151,7 +159,7 @@ def suggest(project: Project, scenario: Scenario | None = None, time_limit: floa
             late = model.new_int_var(0, upper, f"tardiness:{key}")
             model.add_max_equality(late, [0, ends[key] + origin - operation.due])
             tardiness.append(late)
-    model.minimize(sum(tardiness) + makespan)
+    model.minimize(lateness_weight * sum(tardiness) + makespan_weight * makespan)
     model_error = model.validate()
     if model_error:
         return result("invalid", [Issue("solver_model_invalid", f"CP-SAT rejected the numeric model: {model_error}")])
